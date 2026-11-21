@@ -89,8 +89,34 @@ and drift signals if $\max(U_t - m_t, L_t - m_t^{(L)}) > \lambda_{\text{PH}}$.
 - If $z_t\leq\tau_{clip}$, update location with clipped EW residual $m_t=m_{t-1}+\alpha\,\mathrm{clip}(r_t,\pm\tau_{clip}q)$ and update scale slowly from clipped $|r_t|$. Large isolated residuals do not update the baseline.
 - On a drift trigger, reset location to the median of recent observations; scale remains slow to avoid absorbing a volatility burst immediately.
 
+### Version E - Causal robust residual and persistence
+- At time `t`, construct all reference statistics from the prior window `W_{t-1}`; score `x_t` before adding it to the window.
+- Use `s_t = max(1.4826 MAD(W), alpha IQR(W), sigma_floor)` to prevent zero-MAD division on flat or quantized data.
+- Extrapolate a local linear fit over the trailing causal window and compute `S_level = |x_t - xhat_t| / s_t`. Optionally select a seasonal lag from warm-up observations only, freeze it, and compute a lag residual against `x_{t-P}` with a robust residual scale. Final score is `S_t = max(S_level, S_lag)`.
+- Alert on an extreme score `S_t >= tau_high`; moderate scores `tau_low <= S_t < tau_high` require at least two threshold crossings in the recent `K` steps.
+- After 20 accepted low-score observations, multiply both thresholds by `max(1, Q_q(history)/tau_low)`, where `Q_q` is the configured causal score quantile (default 0.99). Only prior, non-alert scores enter this calibration history.
+- Feed clipped level residuals to the drift detector. A reset is accepted only when recent dispersion is compatible with the previous window.
+- Per-step work is `O(W log W)` due to robust medians and quantiles; memory is `O(W)`. E has no learned fitting phase, though its extra statistics increase constant cost versus simpler variants.
+- E is experimental: its thresholds are dataset dependent and should be selected using validation data.
+
+### Version E2 - Dual-tier spike and persistence trigger
+- E2 retains E's strictly causal level/seasonal scores, robust scale floor, accepted-score calibration, and drift handling.
+- The moderate tier is `S_t > tau_moderate`; the extreme tier is `S_t > tau_extreme`, with `tau_extreme > tau_moderate`. An extreme score alerts immediately, including an isolated one-point spike. A moderate score alerts when at least two of the most recent `K` scores exceed `tau_moderate` (default `K=3`). Optional `e2_alert_hold_steps` keeps an alert active for a short number of subsequent steps; default is zero.
+- In the real benchmark, validation selects the moderate/extreme thresholds, scale-floor ratio, lag choice, and persistence window using `0.5 * pooled point F1 + 0.5 * positive-series macro Event F1`, subject to zero-event macro FPR `<= 0.10`. If no candidate meets the cap, the report marks a fallback and chooses the lowest-FPR candidate, breaking ties by objective. No test labels enter this selection.
+- E2 has the same asymptotic cost as E: `O(W log W)` per point due to rolling robust statistics and `O(W)` memory; it adds only a bounded threshold-history check. It has no learned fitting stage.
+
 ### LSTM comparison baseline
 - A one-layer univariate LSTM maps the prior $L$ normalized observations to a one-step forecast: $\hat{x}_t=f_\theta(x_{t-L:t-1})$.
 - Fit uses only a training prefix and Smooth L1 loss. Location and scale normalization are estimated robustly from that prefix.
 - The anomaly score is the absolute normalized forecast residual $S_t=|x_t-\hat{x}_t|/s_{train}$. Threshold is the 99th percentile of normal validation residuals; validation labels are not used to fit model weights or threshold.
 - With hidden width $H$, lookback $L$, $N$ training observations and $E$ epochs, approximate training time is $O(E N L H^2)$; inference is $O(LH^2)$ per point. Parameter count is $O(H^2)$ for one layer. This adds framework/runtime overhead and model fitting cost relative to the rolling statistical methods.
+
+## 5. Optional Literature-Aligned Metrics
+
+The benchmark reports these alongside, and separately from, the strict causal metrics. Detector predictions are still generated causally with the validation-selected threshold; only the offline scoring protocol differs.
+
+For each contiguous ground-truth anomaly segment $I_j=[a_j,b_j]$, point adjustment changes the binary prediction to
+$$\hat y_t^{PA}=1 \quad\text{for every }t\in I_j\quad\text{if}\quad\sum_{t\in I_j}\hat y_t\ge 1,$$
+and leaves predictions outside true anomaly segments unchanged. `PA-precision`, `PA-recall`, and `PA-F1` are ordinary pointwise metrics computed from $y_t$ and $\hat y_t^{PA}$. The strict unadjusted `Point F1` uses $\hat y_t$ directly, so a single hit in a long event only counts as one true positive. PA-F1 is included for comparison with published results, not as the primary measure: it can overstate performance by crediting an entire segment after a single hit (Kim et al., AAAI 2022, [paper](https://ojs.aaai.org/index.php/AAAI/article/view/20680)).
+
+The report includes PA micro metrics pooled across test points and PA macro metrics averaged over positive test series. Score-based PR-AUC is Average Precision (AP), and ROC-AUC is computed from continuous anomaly scores; both are averaged over positive test series containing both labels. Per-series oracle best F1 and oracle best PA-F1 sweep all distinct score thresholds on that series' test labels. These oracle values are diagnostic upper bounds only and must not be interpreted as deployable or validation-tuned performance.

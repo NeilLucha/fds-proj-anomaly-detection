@@ -1,0 +1,2 @@
+series,variant,precision,recall,f1,roc_auc,pr_auc,n_drift_triggers,false_drift_rate,adaptation_accepted,adaptation_rejected,runtime_s
+series_0,unknown,0.015267175572519083,1.0,0.03007518796992481,1.0,1.0,0,0.0,0,0,0.14150339999468997

@@ -19,6 +19,7 @@ from typing import List, Optional
 
 import numpy as np
 from sklearn.metrics import (
+    average_precision_score,
     auc,
     f1_score,
     precision_recall_curve,
@@ -345,6 +346,9 @@ def event_window_metrics(
         "event_f1": f1,
         "false_alert_clusters": fp,
         "zero_event_fpr": len(false_alert_points) / len(truth) if not true_events and len(truth) else 0.0,
+        "zero_event_false_positive_rate_fp_over_fp_plus_tn": (
+            len(false_alert_points) / len(truth) if not true_events and len(truth) else 0.0
+        ),
         "false_alert_count": len(false_alert_points),
     }
 
@@ -356,27 +360,165 @@ def _boolean_runs(mask: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(starts.tolist(), ends.tolist()))
 
 
+def point_adjusted_predictions(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+    """Apply segment-wise point adjustment to predictions.
+
+    If any prediction hits a contiguous true anomaly segment, mark the full
+    segment as detected. Predictions outside true segments are unchanged.
+    """
+    truth = np.asarray(y_true, dtype=bool)
+    pred = np.asarray(y_pred, dtype=bool)
+    if truth.shape != pred.shape:
+        raise ValueError("y_true and y_pred must have the same shape")
+    adjusted = pred.copy()
+    for start, end in _boolean_runs(truth):
+        if pred[start:end].any():
+            adjusted[start:end] = True
+    return adjusted
+
+
+def literature_series_metrics(
+    y_true: np.ndarray, y_pred: np.ndarray, scores: np.ndarray
+) -> dict:
+    """Point-adjusted and score-based metrics for one series."""
+    truth = np.asarray(y_true, dtype=bool)
+    pred = np.asarray(y_pred, dtype=bool)
+    score = np.asarray(scores, dtype=float)
+    if truth.shape != pred.shape or truth.shape != score.shape:
+        raise ValueError("truth, predictions, and scores must have the same shape")
+    adjusted = point_adjusted_predictions(truth, pred)
+    safe_scores = np.nan_to_num(
+        score, nan=0.0, posinf=np.finfo(float).max, neginf=np.finfo(float).min
+    )
+    strict = compute_point_metrics(truth, pred, score)
+    pa = compute_point_metrics(truth, adjusted, score)
+    return {
+        "pa_precision": pa["precision"],
+        "pa_recall": pa["recall"],
+        "pa_f1": pa["f1"],
+        "pr_auc": (
+            float(average_precision_score(truth, safe_scores))
+            if truth.any() and (~truth).any() else 0.0
+        ),
+        "roc_auc": strict["roc_auc"],
+        "oracle_best_f1": oracle_best_f1(truth, score, point_adjust=False),
+        "oracle_best_pa_f1": oracle_best_f1(truth, score, point_adjust=True),
+    }
+
+
+def oracle_best_f1(
+    y_true: np.ndarray, scores: np.ndarray, point_adjust: bool = False
+) -> float:
+    """Maximum F1 over score thresholds for one series (test-label oracle)."""
+    truth = np.asarray(y_true, dtype=bool)
+    score = np.asarray(scores, dtype=float)
+    if truth.shape != score.shape:
+        raise ValueError("truth and scores must have the same shape")
+    if truth.size == 0 or not truth.any():
+        return 0.0
+    score = np.nan_to_num(score, nan=-np.inf, posinf=np.finfo(float).max,
+                          neginf=-np.finfo(float).max)
+    _, inverse = np.unique(score, return_inverse=True)
+    n_groups = int(inverse.max()) + 1
+    n_pos = int(truth.sum())
+    negative_counts = np.bincount(inverse[~truth], minlength=n_groups)
+    fp_by_threshold = np.cumsum(negative_counts[::-1])[::-1]
+    if point_adjust:
+        segment_group = [int(np.max(inverse[start:end])) for start, end in _boolean_runs(truth)]
+        segment_lengths = [end - start for start, end in _boolean_runs(truth)]
+        detected_lengths = np.zeros(n_groups, dtype=int)
+        for group, length in zip(segment_group, segment_lengths):
+            detected_lengths[group] += length
+        tp_by_threshold = np.cumsum(detected_lengths[::-1])[::-1]
+    else:
+        positive_counts = np.bincount(inverse[truth], minlength=n_groups)
+        tp_by_threshold = np.cumsum(positive_counts[::-1])[::-1]
+    denominators = 2 * tp_by_threshold + fp_by_threshold + (n_pos - tp_by_threshold)
+    f1_values = np.divide(
+        2 * tp_by_threshold, denominators,
+        out=np.zeros(n_groups, dtype=float), where=denominators != 0,
+    )
+    return float(np.max(f1_values, initial=0.0))
+
+
+def aggregate_literature_metrics(
+    metrics_by_series: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
+) -> dict:
+    """Aggregate PA micro/macro, AUC, and per-positive-series oracle scores."""
+    pa_truth, pa_pred = [], []
+    positive_rows = []
+    auc_rows = []
+    for truth_raw, pred_raw, scores_raw in metrics_by_series.values():
+        truth = np.asarray(truth_raw, dtype=bool)
+        pred = np.asarray(pred_raw, dtype=bool)
+        scores = np.asarray(scores_raw, dtype=float)
+        adjusted = point_adjusted_predictions(truth, pred)
+        pa_truth.extend(truth.tolist())
+        pa_pred.extend(adjusted.tolist())
+        if truth.any():
+            row = literature_series_metrics(truth, pred, scores)
+            positive_rows.append(row)
+            if np.unique(truth).size == 2:
+                auc_rows.append(row)
+    pooled = compute_point_metrics(np.asarray(pa_truth), np.asarray(pa_pred), np.zeros(len(pa_truth)))
+    if positive_rows:
+        macro_pa = {
+            key: float(np.mean([row[key] for row in positive_rows]))
+            for key in ("pa_precision", "pa_recall", "pa_f1")
+        }
+        oracle_f1 = float(np.mean([row["oracle_best_f1"] for row in positive_rows]))
+        oracle_pa_f1 = float(np.mean([row["oracle_best_pa_f1"] for row in positive_rows]))
+    else:
+        macro_pa = {"pa_precision": 0.0, "pa_recall": 0.0, "pa_f1": 0.0}
+        oracle_f1 = oracle_pa_f1 = 0.0
+    return {
+        "pa_micro_precision": pooled["precision"],
+        "pa_micro_recall": pooled["recall"],
+        "pa_micro_f1": pooled["f1"],
+        "pa_macro_positive_series": macro_pa,
+        "positive_series_mean_pr_auc": float(np.mean([r["pr_auc"] for r in auc_rows])) if auc_rows else 0.0,
+        "positive_series_mean_roc_auc": float(np.mean([r["roc_auc"] for r in auc_rows])) if auc_rows else 0.5,
+        "oracle_best_f1_macro_positive_series": oracle_f1,
+        "oracle_best_pa_f1_macro_positive_series": oracle_pa_f1,
+        "oracle_series_count": len(positive_rows),
+        "auc_series_count": len(auc_rows),
+    }
+
+
 def pooled_point_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
-    """Pooled pointwise precision/recall/F1 and zero-event false alarm rate."""
+    """Pooled pointwise precision/recall/F1 and overall pointwise FPR."""
     truth = np.asarray(y_true, dtype=bool)
     pred = np.asarray(y_pred, dtype=bool)
     tp = int(np.sum(truth & pred))
     fp = int(np.sum(~truth & pred))
     fn = int(np.sum(truth & ~pred))
+    tn = int(np.sum(~truth & ~pred))
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
-    return {
+    result = {
         "precision": precision,
         "recall": recall,
         "f1": 2 * precision * recall / (precision + recall) if precision + recall else 0.0,
         "false_alert_count": fp,
-        "zero_event_fpr": fp / max(1, int(np.sum(~truth))),
+        "tp": tp,
+        "fp": fp,
+        "tn": tn,
+        "fn": fn,
+        "pointwise_fpr_fp_over_fp_plus_tn": fp / (fp + tn) if fp + tn else 0.0,
     }
+    # A single vector can represent a zero-event series (as in per-series
+    # evaluation) or a mixed pooled set. Only label it zero-event when all
+    # supplied truth labels are negative; multi-series aggregation below
+    # computes the restricted pooled rate directly from each series.
+    if not truth.any():
+        result["zero_event_fpr"] = fp / (fp + tn) if fp + tn else 0.0
+        result["zero_event_point_fpr"] = result["zero_event_fpr"]
+    return result
 
 
 def evaluate_pointwise_macro(metrics_by_series: dict[str, tuple[np.ndarray, np.ndarray]]) -> dict:
     """Pooled micro scores and positive-series macro F1 from raw predictions."""
-    true_all, pred_all, f1_positive, zero_fprs, zero_false = [], [], [], [], 0
+    true_all, pred_all, f1_positive, zero_fprs, zero_false, zero_points = [], [], [], [], 0, 0
     for truth_raw, pred_raw in metrics_by_series.values():
         truth = np.asarray(truth_raw, dtype=bool)
         pred = np.asarray(pred_raw, dtype=bool)
@@ -388,11 +530,30 @@ def evaluate_pointwise_macro(metrics_by_series: dict[str, tuple[np.ndarray, np.n
             r = tp / (tp + fn) if tp + fn else 0.0
             f1_positive.append(2 * p * r / (p + r) if p + r else 0.0)
         else:
-            zero_fprs.append(float(np.mean(pred)) if len(pred) else 0.0)
+            # By definition here, zero-event FPR is FP/(FP+TN); all true
+            # labels are negative, so this equals mean(prediction).
+            fp = int(np.sum(pred))
+            tn = int(len(pred) - fp)
+            zero_fprs.append(fp / (fp + tn) if fp + tn else 0.0)
             zero_false += int(np.sum(pred))
+            zero_points += len(truth)
+    micro = pooled_point_metrics(np.asarray(true_all), np.asarray(pred_all))
+    zero_event_point_fpr = zero_false / zero_points if zero_points else 0.0
+    micro["zero_event_fpr"] = zero_event_point_fpr
+    micro["zero_event_point_fpr"] = zero_event_point_fpr
+    # Recompute overall pointwise FPR from all negative-labelled points,
+    # independent of anomaly-positive points in the pooled truth vector.
+    all_fp = sum(int(np.sum(~np.asarray(t, dtype=bool) & np.asarray(p, dtype=bool)))
+                 for t, p in metrics_by_series.values())
+    all_tn = sum(int(np.sum(~np.asarray(t, dtype=bool) & ~np.asarray(p, dtype=bool)))
+                 for t, p in metrics_by_series.values())
+    overall_fpr = all_fp / (all_fp + all_tn) if all_fp + all_tn else 0.0
+    micro["pointwise_fpr_fp_over_fp_plus_tn"] = overall_fpr
+    micro["pointwise_fpr_fp_over_fp_plus_tn_all_series"] = overall_fpr
     return {
-        "micro": pooled_point_metrics(np.asarray(true_all), np.asarray(pred_all)),
+        "micro": micro,
         "macro_f1_positive_series": float(np.mean(f1_positive)) if f1_positive else 0.0,
         "zero_event_series_mean_fpr": float(np.mean(zero_fprs)) if zero_fprs else 0.0,
+        "zero_event_fpr_aggregation": "unweighted macro mean of per-series FP/(FP+TN) over series with zero positive labels",
         "zero_event_series_false_alerts": zero_false,
     }

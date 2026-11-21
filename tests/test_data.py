@@ -67,3 +67,36 @@ def test_yahoo_loader_unavailable(tmp_path: Path):
     loader = YahooS5Loader(data_root=tmp_path / "empty_yahoo")
     assert loader.is_available() is False
     loader.print_setup_instructions()
+
+
+def test_yahoo_huggingface_header_aliases_and_aggregate_skip(tmp_path: Path):
+    """Parse HF A3/A4 header names and ignore their combined wide CSVs."""
+    loader = YahooS5Loader(data_root=tmp_path)
+    a3 = tmp_path / "A3Benchmark" / "A3Benchmark-TS1.csv"
+    a3.parent.mkdir(parents=True)
+    a3.write_text(
+        "timestamps,value,anomaly,changepoint,trend\n"
+        "100,1.0,0,0,0\n101,9.0,1,1,0\n",
+        encoding="utf-8",
+    )
+    (a3.parent / "A3Benchmark_all.csv").write_text(
+        "timestamps,A3Benchmark-TS1\n100,1\n", encoding="utf-8"
+    )
+    series = loader.load_benchmark("A3")
+    assert len(series) == 1
+    assert series[0].timestamps == [100.0, 101.0]
+    assert series[0].labels == [False, True]
+    assert series[0].change_points == [False, True]
+
+
+def test_yahoo_huggingface_a1_timestamp_header(tmp_path: Path):
+    loader = YahooS5Loader(data_root=tmp_path)
+    path = tmp_path / "A1Benchmark" / "real_1.csv"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "timestamp,value,is_anomaly\n1,2.0,0\n2,8.0,1\n", encoding="utf-8"
+    )
+    series = loader.load_benchmark("A1")
+    assert len(series) == 1
+    assert series[0].timestamps == [1.0, 2.0]
+    assert series[0].labels == [False, True]

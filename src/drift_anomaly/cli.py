@@ -27,6 +27,7 @@ from typing import Optional
 
 import click
 import yaml
+from tqdm.auto import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ def download_nab(ctx: click.Context, data_root: str) -> None:
 @cli.command("check-yahoo")
 @click.option(
     "--data-root",
-    default="data/yahoo",
+    default="data/raw/yahoo_s5",
     show_default=True,
     help="Root directory where Yahoo S5 data should be placed.",
 )
@@ -211,7 +212,7 @@ def generate_synthetic(
 @cli.command("tune")
 @click.option(
     "--variant",
-    type=click.Choice(["A", "B", "C", "D"], case_sensitive=True),
+    type=click.Choice(["A", "B", "C", "D", "E", "E2"], case_sensitive=True),
     default="A",
     show_default=True,
     help="Detector variant to tune.",
@@ -273,14 +274,15 @@ def tune(
     test_fraction = cfg_dict.get("test_fraction", 0.2)
     train_ts, val_ts, _ = temporal_split(ts, val_fraction=val_fraction, test_fraction=test_fraction)
 
-    from drift_anomaly.detectors import VersionA, VersionB, VersionC, VersionD
-    detector_map = {"A": VersionA, "B": VersionB, "C": VersionC, "D": VersionD}
+    from drift_anomaly.detectors import VersionA, VersionB, VersionC, VersionD, VersionE, VersionE2
+    detector_map = {"A": VersionA, "B": VersionB, "C": VersionC, "D": VersionD, "E": VersionE, "E2": VersionE2}
     det_cls = detector_map.get(variant, VersionA)
 
     best_tau, results = tune_threshold(
         DetectorClass=det_cls,
         config=det_cfg,
         val_series=val_ts,
+        warmup_series=train_ts,
     )
 
     best_f1 = results.get(best_tau).f1 if (results and best_tau in results) else 0.0
@@ -303,7 +305,7 @@ def tune(
 @cli.command("evaluate")
 @click.option(
     "--variant",
-    type=click.Choice(["A", "B", "C", "D"], case_sensitive=True),
+    type=click.Choice(["A", "B", "C", "D", "E", "E2"], case_sensitive=True),
     default="A",
     show_default=True,
 )
@@ -327,9 +329,11 @@ def evaluate(
 ) -> None:
     """Evaluate a single detector variant on a dataset and report metrics."""
     _setup_logging(ctx.obj.get("verbose", False))
-    from drift_anomaly.pipeline import evaluate_detector, temporal_split
-    from drift_anomaly.detectors import VersionA, VersionB, VersionC, VersionD
+    from drift_anomaly.pipeline.tune import _run_detector_from_prefix, temporal_split
+    from drift_anomaly.pipeline.metrics import compute_metrics
+    from drift_anomaly.detectors import VersionA, VersionB, VersionC, VersionD, VersionE, VersionE2
     from drift_anomaly.data import load_series
+    from drift_anomaly.types import TimeSeries
     import json
 
     cfg_dict = _load_config(config_path)
@@ -345,18 +349,16 @@ def evaluate(
     ts = _load_ts(dataset, _series_name, cfg_dict)
     val_fraction = cfg_dict.get("val_fraction", 0.2)
     test_fraction = cfg_dict.get("test_fraction", 0.2)
-    _, val_ts, test_ts = temporal_split(ts, val_fraction=val_fraction, test_fraction=test_fraction)
+    train_ts, val_ts, test_ts = temporal_split(ts, val_fraction=val_fraction, test_fraction=test_fraction)
+    context_ts = TimeSeries(points=train_ts.points + val_ts.points, name=ts.name,
+                            metadata=dict(ts.metadata))
 
-    detector_map = {"A": VersionA, "B": VersionB, "C": VersionC, "D": VersionD}
+    detector_map = {"A": VersionA, "B": VersionB, "C": VersionC, "D": VersionD, "E": VersionE, "E2": VersionE2}
     det_cls = detector_map.get(variant, VersionA)
 
     t0 = time.perf_counter()
-    metrics_list = evaluate_detector(
-        DetectorClass=det_cls,
-        config=det_cfg,
-        test_series=[test_ts],
-    )
-    metrics = metrics_list[0]
+    result = _run_detector_from_prefix(det_cls, det_cfg, context_ts, test_ts, show_progress=True)
+    metrics = compute_metrics(result, test_ts)
     elapsed = time.perf_counter() - t0
 
     click.echo("\n── Evaluation Results ─────────────────────────")
@@ -399,10 +401,12 @@ def evaluate_all(
     series: Optional[str],
     output_dir: str,
 ) -> None:
-    """Evaluate ALL three detector variants and compare results."""
+    """Evaluate statistical detector variants A through E2 and compare results."""
     _setup_logging(ctx.obj.get("verbose", False))
-    from drift_anomaly.pipeline import evaluate_detector, temporal_split
-    from drift_anomaly.detectors import VersionA, VersionB, VersionC, VersionD
+    from drift_anomaly.pipeline.tune import _run_detector_from_prefix, temporal_split
+    from drift_anomaly.pipeline.metrics import compute_metrics
+    from drift_anomaly.detectors import VersionA, VersionB, VersionC, VersionD, VersionE, VersionE2
+    from drift_anomaly.types import TimeSeries
     import json, dataclasses
 
     cfg_dict = _load_config(config_path)
@@ -413,20 +417,18 @@ def evaluate_all(
     ts = _load_ts(dataset, _series_name, cfg_dict)
     val_fraction = cfg_dict.get("val_fraction", 0.2)
     test_fraction = cfg_dict.get("test_fraction", 0.2)
-    _, val_ts, test_ts = temporal_split(ts, val_fraction=val_fraction, test_fraction=test_fraction)
+    train_ts, val_ts, test_ts = temporal_split(ts, val_fraction=val_fraction, test_fraction=test_fraction)
+    context_ts = TimeSeries(points=train_ts.points + val_ts.points, name=ts.name,
+                            metadata=dict(ts.metadata))
 
-    detector_map = {"A": VersionA, "B": VersionB, "C": VersionC, "D": VersionD}
+    detector_map = {"A": VersionA, "B": VersionB, "C": VersionC, "D": VersionD, "E": VersionE, "E2": VersionE2}
     all_results = {}
-    for variant in ["A", "B", "C", "D"]:
+    for variant in tqdm(["A", "B", "C", "D", "E", "E2"], desc="Evaluating variants"):
         click.echo(f"Evaluating variant {variant} …")
         try:
             det_cls = detector_map[variant]
-            metrics_list = evaluate_detector(
-                DetectorClass=det_cls,
-                config=det_cfg,
-                test_series=[test_ts],
-            )
-            all_results[variant] = dataclasses.asdict(metrics_list[0])
+            result = _run_detector_from_prefix(det_cls, det_cfg, context_ts, test_ts, show_progress=True)
+            all_results[variant] = dataclasses.asdict(compute_metrics(result, test_ts))
         except Exception as exc:  # noqa: BLE001
             click.echo(click.style(f"  ✗ Variant {variant} failed: {exc}", fg="red"))
             all_results[variant] = {"error": str(exc)}
@@ -536,12 +538,12 @@ def report(ctx: click.Context, output_dir: str, fmt: str) -> None:
 )
 @click.pass_context
 def smoke_test(ctx: click.Context, n_points: int) -> None:
-    """Quick end-to-end sanity check — runs all four variants on synthetic data."""
+    """Quick end-to-end sanity check — runs variants A through E2 on synthetic data."""
     _setup_logging(ctx.obj.get("verbose", False))
     import math
     from drift_anomaly.data.synthetic import SyntheticGenerator
     from drift_anomaly.types import DetectorConfig
-    from drift_anomaly.detectors import VersionA, VersionB, VersionC, VersionD
+    from drift_anomaly.detectors import VersionA, VersionB, VersionC, VersionD, VersionE, VersionE2
 
     click.echo(f"Running smoke test with n_points={n_points} …")
     gen = SyntheticGenerator(seed=0)
@@ -555,7 +557,7 @@ def smoke_test(ctx: click.Context, n_points: int) -> None:
     )
 
     all_ok = True
-    for Cls in [VersionA, VersionB, VersionC, VersionD]:
+    for Cls in tqdm([VersionA, VersionB, VersionC, VersionD, VersionE, VersionE2], desc="Smoke test"):
         name = Cls.__name__
         t0 = time.perf_counter()
         try:
@@ -606,7 +608,7 @@ def _load_ts(dataset: str, series_name: str, cfg_dict: dict):
         data_root = cfg_dict.get("data_root", "data/nab")
         kwargs["data_root"] = data_root
     elif dataset in ("yahoo", "yahoo_s5"):
-        data_root = cfg_dict.get("data_root", "data/yahoo")
+        data_root = cfg_dict.get("data_root", "data/raw/yahoo_s5")
         kwargs["data_root"] = data_root
 
     try:
@@ -623,6 +625,13 @@ def _load_ts(dataset: str, series_name: str, cfg_dict: dict):
 
 def main() -> None:
     """Package entry-point called by the ``drift-anomaly`` console script."""
+    # Click help and status messages include Unicode punctuation/icons. Use
+    # UTF-8 on Windows consoles that default to the legacy cp1252 encoding.
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except (AttributeError, OSError):
+            pass
     cli()
 
 

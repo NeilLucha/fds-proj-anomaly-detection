@@ -63,6 +63,6 @@
     "zero_event_mean_fpr": 0.1428099173553719,
     "zero_event_false_alert_count": 864,
     "event_window_macro_f1": 0.1766666666666667,
-    "training_time_s_total": 2.6860063999993145
+    "training_time_s_total": 4.685487300004752
   }
 }

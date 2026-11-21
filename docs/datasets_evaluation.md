@@ -41,6 +41,10 @@ Temporal Order: [-------- Train (60%) --------][---- Validation (20%) ----][----
 
 ## 3. Reported Metrics
 
+For benchmark summaries, `pointwise_fpr_fp_over_fp_plus_tn` is pooled pointwise `FP/(FP+TN)` across all series. `zero_event_fpr` and `zero_event_point_fpr` are pooled pointwise `FP/(FP+TN)` restricted to points from series with no positive labels. `zero_event_mean_fpr` (also `zero_event_series_mean_fpr` in the JSON summary) is the unweighted mean of the per-series `FP/(FP+TN)` on those zero-event series. The pooled rate weights longer series more; the mean rate gives every series equal weight. Neither is alert-cluster precision.
+
+The optional literature-aligned section reports point-adjusted (PA) precision/recall/F1 at the same validation-selected threshold, micro and positive-series macro PA-F1, per-positive-series Average Precision and ROC-AUC, and per-series oracle best unadjusted F1 and PA-F1. Point adjustment fills a complete contiguous true anomaly window after any one point in the window is detected. Strict metrics do not do this. Oracle scores use test labels to sweep thresholds and are reported only as retrospective upper bounds. PA is included for comparability, with the known overestimation caveat from Kim et al., AAAI 2022 ([paper](https://ojs.aaai.org/index.php/AAAI/article/view/20680)).
+
 ### Point-Level Anomaly Detection
 - **Precision**: $\frac{\text{TP}}{\text{TP} + \text{FP}}$
 - **Recall**: $\frac{\text{TP}}{\text{TP} + \text{FN}}$

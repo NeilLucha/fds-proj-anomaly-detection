@@ -37,7 +37,7 @@ cooldown: 15
 feed_scores: false
 
 # --- Data root (default; override via CLI) ---
-data_root: data/yahoo
+data_root: data/raw/yahoo_s5
 
 # --- Pipeline splits ---
 val_fraction: 0.2

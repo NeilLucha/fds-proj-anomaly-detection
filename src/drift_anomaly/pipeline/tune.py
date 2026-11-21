@@ -18,6 +18,7 @@ import time
 from typing import Dict, List, Optional, Tuple, Type
 
 import numpy as np
+from tqdm.auto import tqdm
 
 from ..types import DetectorConfig, DetectorResult, EvalMetrics, TimeSeries, TimeSeriesPoint
 from ..detectors.base import BaseDetector
@@ -47,17 +48,20 @@ def _run_detector_from_prefix(
     config: DetectorConfig,
     prefix: TimeSeries,
     scored: TimeSeries,
+    show_progress: bool = False,
 ):
     """Warm a fresh detector on a causal prefix, returning outputs on *scored*."""
     detector = DetectorClass(config)
     detector.reset()
     start = time.perf_counter()
-    for index, point in enumerate(prefix.points):
+    warmup_points = tqdm(prefix.points, desc="Replay context", unit="point", leave=False) if show_progress else prefix.points
+    for index, point in enumerate(warmup_points):
         detector.step(point.value, index)
 
     scores, alerts, drift_events, adaptations = [], [], [], []
     offset = len(prefix)
-    for local_index, point in enumerate(scored.points):
+    scored_points = tqdm(scored.points, desc="Score test data", unit="point", leave=False) if show_progress else scored.points
+    for local_index, point in enumerate(scored_points):
         # Use a contiguous stream index. Detector implementations use t only
         # for outputs/telemetry; the fresh instance already owns prior state.
         out = detector.step(point.value, offset + local_index)
@@ -194,7 +198,7 @@ def tune_threshold(
     best_tau: float = tau_grid[0]
     best_score: float = -1.0
 
-    for tau in tau_grid:
+    for tau in tqdm(tau_grid, desc=f"Tune {DetectorClass.__name__} threshold", leave=False):
         # Create a fresh config copy with this tau.
         trial_config = dataclasses.replace(config, tau=tau)
         try:

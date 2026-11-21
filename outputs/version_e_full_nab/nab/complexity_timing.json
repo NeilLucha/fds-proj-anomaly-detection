@@ -1,0 +1,47 @@
+{
+  "A": {
+    "training_time_s": 0.0,
+    "inference_time_s": 6.2850020000187214,
+    "time_complexity_per_point": "O(W log W) robust median/MAD update",
+    "memory_complexity": "O(W)"
+  },
+  "B": {
+    "training_time_s": 0.0,
+    "inference_time_s": 7.708874000003561,
+    "time_complexity_per_point": "O(W log W) robust median/MAD update",
+    "memory_complexity": "O(W)"
+  },
+  "C": {
+    "training_time_s": 0.0,
+    "inference_time_s": 0.9078835000036634,
+    "time_complexity_per_point": "O(W log W) robust median/MAD update",
+    "memory_complexity": "O(W)"
+  },
+  "D": {
+    "training_time_s": 0.0,
+    "inference_time_s": 2.0642343999934383,
+    "time_complexity_per_point": "O(W log W) robust median/MAD update",
+    "memory_complexity": "O(W)"
+  },
+  "E": {
+    "training_time_s": 0.0,
+    "inference_time_s": 46.372387999959756,
+    "time_complexity_per_point": "O(W log W) robust median/MAD update",
+    "memory_complexity": "O(W)"
+  },
+  "LSTM": {
+    "training_time_s": 2136.555231999955,
+    "inference_time_s": 0.9637998999896809,
+    "parameter_count": 1233,
+    "time_complexity_training": "O(E*N*L*H^2) per series, minibatched BPTT",
+    "time_complexity_inference": "O(L*H^2) per forecasted point",
+    "memory_complexity": "O(L*H + P + B*L), P parameters, B minibatch size",
+    "settings": {
+      "lookback": 24,
+      "hidden_size": 16,
+      "epochs": 5,
+      "learning_rate": 0.01,
+      "seed": 42
+    }
+  }
+}

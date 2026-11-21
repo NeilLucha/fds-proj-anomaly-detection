@@ -166,6 +166,21 @@ class DetectorConfig:
     # Candidate-window contamination gate (Version A)
     tau_cand: float = 3.0
     tau_int: float = 3.5
+    e_scale_floor_ratio: float = 0.25
+    e_sigma_floor: float = 1e-3
+    e_tau_low: float = 2.5
+    e_tau_high: float = 7.0
+    e_persistence_k: int = 2
+    e_seasonal_lag: int = 24
+    e_auto_lag: bool = False
+    e_max_lag: int = 48
+    e_online_calibration: bool = True
+    e_calibration_quantile: float = 0.99
+    e2_tau_moderate: float = 2.5
+    e2_tau_extreme: float = 7.0
+    e2_persistence_k: int = 3
+    e2_alert_hold_steps: int = 0
+    e2_validation_zero_event_fpr_cap: float = 0.10
     rho_max: float = 0.3
     kappa_max: float = 3.0
 

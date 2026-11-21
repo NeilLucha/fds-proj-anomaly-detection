@@ -17,9 +17,11 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Type
 
+import numpy as np
+
 from ..detectors.base import BaseDetector
 from ..types import DetectorConfig, DetectorResult, EvalMetrics, TimeSeries
-from .metrics import compute_metrics
+from .metrics import aggregate_literature_metrics, compute_metrics, literature_series_metrics
 from .tune import temporal_split, tune_threshold
 
 logger = logging.getLogger(__name__)
@@ -178,6 +180,32 @@ def evaluate_all_variants(
         results[variant_name] = metrics_list
 
     return results
+
+
+def evaluate_literature_results(
+    results_by_series: Dict[str, tuple[DetectorResult, TimeSeries]],
+) -> dict:
+    """Compute optional literature-aligned metrics from already-scored output.
+
+    Detector predictions and continuous scores are consumed as-is; no model
+    is rerun and no strict metric or detector behavior is modified.
+    """
+    per_series = {}
+    arrays = {}
+    for name, (result, series) in results_by_series.items():
+        truth = np.asarray(series.labels, dtype=bool)
+        pred = np.asarray(result.alerts, dtype=bool)
+        scores = np.asarray(result.scores, dtype=float)
+        n = min(len(truth), len(pred), len(scores))
+        truth, pred, scores = truth[:n], pred[:n], scores[:n]
+        per_series[name] = literature_series_metrics(
+            truth, pred, scores
+        )
+        arrays[name] = (truth, pred, scores)
+    return {
+        "per_series": per_series,
+        "aggregate": aggregate_literature_metrics(arrays),
+    }
 
 
 # ---------------------------------------------------------------------------

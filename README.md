@@ -333,6 +333,14 @@ Version D scores the causal innovation `r_t = x_t - m_(t-1)` using prior robust 
 
 ---
 
+### Version E and E2 - Causal Drift-Aware Statistical Detectors
+
+E is an experimental, training-free comparison pipeline. It scores using prior observations only, applies the scale floor `max(1.4826*MAD, alpha*IQR, sigma_floor)`, combines a local linear extrapolation residual with an optional causal seasonal-lag residual, and uses extreme-score / 2-of-K persistence alerting. Once 20 accepted low-score observations are available, a causal running score quantile adjusts both alert thresholds; only prior non-alert scores enter that history. Drift monitoring receives clipped residuals and resets only when recent dispersion is compatible with the prior baseline. An automatically selected lag is selected during warm-up and then frozen. E costs `O(W log W)` work per point and `O(W)` memory: the same asymptotic order as robust rolling methods but with more work per point, and no model fitting phase.
+
+The real benchmark compares `A`, `B`, `C`, `D`, `E`, and `LSTM`. In `--series-split` mode E settings are selected using validation-side series and scored on held-out test series. In temporal mode E uses its configured values without an E hyperparameter search, keeping the held-out time suffix out of selection.
+
+The benchmark displays progress for threshold search, E and E2 validation ablations, each test series, and LSTM training epochs. E2 adds immediate alerts for extreme spikes while keeping a persistence requirement for moderate scores. It does not perform an exhaustive search over every detector parameter: see [COMMANDS.md](COMMANDS.md) for the exact search spaces and fixed LSTM settings.
+
 ## Evaluation Methodology
 
 ### Temporal Split
@@ -353,20 +361,11 @@ Data are split **in time order** (no shuffling) to avoid look-ahead bias:
 
 Threshold `τ` is selected by maximising F1 on the **validation split only**. The test split is not inspected until a single final evaluation run.
 
-### Exploratory NAB Results (statistical variants)
+### Reproducible Full-Dataset Results
 
-Series-level pooled threshold run (`outputs/benchmark_v4_series_split_full/nab`, 18 validation and 40 test series; 16/18 and 36/40 contain labels). The shared threshold was `τ=1.5` for all variants. Results are illustrative for this deterministic split, not a leaderboard claim.
+Older output folders contain runs with different variants, data subsets, and protocols, so they are not a consistent comparison set. Run the ordered workflow in [RUN_ALL_EVALUATIONS.md](RUN_ALL_EVALUATIONS.md) to tune/train and evaluate A-D, E, E2, and LSTM on synthetic, NAB, and Yahoo S5 using the same series-holdout protocol. The resulting comparable reports are written to `outputs/final_comparison/<dataset>/`.
 
-| Variant | Pointwise micro F1 | Positive-series macro F1 | Event/window macro F1 | Mean zero-event FPR |
-|---|---:|---:|---:|---:|
-| A | 0.124 | 0.151 | 0.073 | 0.205 |
-| B | 0.061 | 0.069 | 0.098 | 0.133 |
-| C | 0.192 | 0.193 | 0.050 | 0.228 |
-| D | 0.216 | 0.213 | 0.049 | 0.286 |
-
-The LSTM comparison uses a one-layer, 16-unit PyTorch predictor, 24-step lookback, five epochs, robust normalization, and a 99th-percentile normal validation residual threshold. On a stratified 8-series sample (4 test series with labels), LSTM scored **0.121 pointwise micro F1**, **0.047 event/window macro F1**, and **0.007 mean zero-event FPR**. Version D scored 0.164, 0.082, and 0.912 on the same sample. The pooled LSTM training took 26.75 s and test inference took 0.077 s; the model had 1,233 parameters. Statistical variants have no fit phase, use O(W) memory, and took 0.12–0.78 s total inference by variant. See `outputs/lstm_comparison_final/nab/complexity_timing.json` for measurements and asymptotic estimates. These results are small-sample comparisons, not broad performance claims.
-
-Yahoo S5 A1–A4 results are unavailable until the user-licensed data is placed under `data/raw/yahoo_s5/`.
+Yahoo S5 is available locally under `data/raw/yahoo_s5/`; `drift-anomaly check-yahoo --data-root data/raw/yahoo_s5` verifies the A1-A4 directories before evaluation.
 
 ### Metrics
 
@@ -378,6 +377,10 @@ Yahoo S5 A1–A4 results are unavailable until the user-licensed data is placed 
 | ROC-AUC | Area under ROC curve | Score-based, threshold-free |
 | PR-AUC | Area under PR curve | Better for imbalanced datasets |
 | `false_drift_rate` | `# drift events not near a change-point / total drift events` | Measures spurious drift triggers |
+
+`pointwise_fpr_fp_over_fp_plus_tn` is the pooled pointwise rate over all series. `zero_event_fpr` and `zero_event_point_fpr` are the pooled pointwise `FP/(FP+TN)` restricted to zero-event series. `zero_event_mean_fpr` is the unweighted mean of that rate calculated separately for each zero-event series; it gives series equal weight regardless of length.
+
+The benchmark prints a second **LITERATURE-ALIGNED METRICS (POINT-ADJUSTED & ORACLE-BEST)** table. PA-F1 fills an entire contiguous true anomaly segment when at least one detector alert lands inside it, then computes ordinary pointwise F1; strict Point F1 scores the raw predictions without filling missed points. PA scores use the same validation-tuned threshold and are provided only for comparison with published literature. Per-series oracle best F1 / PA-F1 sweep thresholds on test scores and labels, so they are diagnostic upper bounds, not deployable results. PR-AUC in this table is Average Precision (AP); AUC values are averaged over positive test series containing both classes. Point adjustment can inflate apparent performance, as discussed by Kim et al. ([AAAI 2022](https://ojs.aaai.org/index.php/AAAI/article/view/20680)). See [the metric specification](docs/algorithm_math.md#5-optional-literature-aligned-metrics).
 
 ### Drift Diagnostics
 
@@ -494,20 +497,6 @@ A passing run should report ≥ 85% line coverage across all source modules.
 
 ---
 
-## Citation
-
-If you use this code in academic work, please cite:
-
-```bibtex
-@software{drift_anomaly_2024,
-  title  = {drift-anomaly: Drift-aware Anomaly Detection for Time Series},
-  author = {FDS Project Team},
-  year   = {2024},
-  url    = {https://github.com/your-org/fds-proj-anomaly-detection}
-}
-```
-
----
 
 ## License
 

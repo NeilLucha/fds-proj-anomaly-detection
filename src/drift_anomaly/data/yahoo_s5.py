@@ -54,14 +54,14 @@ logger = logging.getLogger(__name__)
 
 #: Expected CSV column names for each benchmark.
 _BENCHMARK_COLS: Dict[str, Dict[str, Optional[str]]] = {
-    "A1": {"timestamp": "timestamps", "value": "value",
+    "A1": {"timestamp": "timestamp", "value": "value",
            "label": "is_anomaly", "change_point": None},
-    "A2": {"timestamp": "timestamps", "value": "value",
+    "A2": {"timestamp": "timestamp", "value": "value",
            "label": "is_anomaly", "change_point": None},
     "A3": {"timestamp": "timestamps", "value": "value",
-           "label": "is_anomaly", "change_point": "changepoint"},
+           "label": "anomaly", "change_point": "changepoint"},
     "A4": {"timestamp": "timestamps", "value": "value",
-           "label": "is_anomaly", "change_point": "changepoint"},
+           "label": "anomaly", "change_point": "changepoint"},
 }
 
 #: Directory names for each benchmark key.
@@ -224,10 +224,17 @@ Benchmark descriptions:
         logger.debug("YahooS5Loader._load_csv: reading '%s'", csv_path)
         df = pd.read_csv(csv_path)
         df.columns = [c.strip() for c in df.columns]  # strip accidental whitespace
+        columns = {str(c).casefold(): c for c in df.columns}
+
+        def resolve_column(primary: Optional[str], *aliases: str) -> Optional[str]:
+            for candidate in (primary, *aliases):
+                if candidate and candidate.casefold() in columns:
+                    return columns[candidate.casefold()]
+            return None
 
         # --- timestamp ---------------------------------------------------
-        ts_col = col["timestamp"]
-        if ts_col and ts_col in df.columns:
+        ts_col = resolve_column(col["timestamp"], "timestamp", "timestamps")
+        if ts_col:
             raw_ts = df[ts_col]
             if pd.api.types.is_integer_dtype(raw_ts) or pd.api.types.is_float_dtype(raw_ts):
                 timestamps = raw_ts.astype(float).values
@@ -243,8 +250,8 @@ Benchmark descriptions:
             )
 
         # --- value -------------------------------------------------------
-        val_col = col["value"]
-        if val_col and val_col in df.columns:
+        val_col = resolve_column(col["value"], "value")
+        if val_col:
             values = df[val_col].astype(float).values
         else:
             raise KeyError(
@@ -253,8 +260,8 @@ Benchmark descriptions:
             )
 
         # --- anomaly labels ----------------------------------------------
-        label_col = col["label"]
-        if label_col and label_col in df.columns:
+        label_col = resolve_column(col["label"], "is_anomaly", "anomaly")
+        if label_col:
             is_anomaly = df[label_col].astype(int).astype(bool).values
         else:
             is_anomaly = None
@@ -264,8 +271,8 @@ Benchmark descriptions:
             )
 
         # --- change-point labels -----------------------------------------
-        cp_col = col["change_point"]
-        if cp_col and cp_col in df.columns:
+        cp_col = resolve_column(col["change_point"], "changepoint", "change_point")
+        if cp_col:
             change_points = df[cp_col].astype(int).astype(bool).values
         else:
             change_points = None
@@ -332,7 +339,13 @@ Benchmark descriptions:
                 f"{[b for b in _BENCHMARK_DIRS.values() if (self.data_root / b).is_dir()]}."
             )
 
-        csv_files = sorted(bm_dir.glob("*.csv"))
+        # A3/A4 repositories include a wide *_all.csv convenience matrix in
+        # addition to the 100 individual series. The matrix is not one series
+        # and would be counted twice / misread by the univariate loader.
+        csv_files = sorted(
+            path for path in bm_dir.glob("*.csv")
+            if not path.stem.casefold().endswith("_all")
+        )
         if not csv_files:
             raise FileNotFoundError(
                 f"No CSV files found in '{bm_dir}'."
@@ -432,13 +445,18 @@ Benchmark descriptions:
             bm_dir = self._benchmark_dir(bm)
             if not bm_dir.is_dir():
                 return []
-            return sorted(f.name for f in bm_dir.glob("*.csv"))
+            return sorted(
+                f.name for f in bm_dir.glob("*.csv")
+                if not f.stem.casefold().endswith("_all")
+            )
 
         result: List[str] = []
         for bm_key, bm_dir_name in _BENCHMARK_DIRS.items():
             bm_dir = self.data_root / bm_dir_name
             if bm_dir.is_dir():
                 result.extend(
-                    f"{bm_key}/{f.name}" for f in sorted(bm_dir.glob("*.csv"))
+                    f"{bm_key}/{f.name}"
+                    for f in sorted(bm_dir.glob("*.csv"))
+                    if not f.stem.casefold().endswith("_all")
                 )
         return result

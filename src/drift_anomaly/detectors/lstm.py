@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 
 import numpy as np
+from tqdm.auto import tqdm
 
 
 @dataclass
@@ -71,7 +72,7 @@ class LSTMAnomalyDetector:
             loss_fn = nn.SmoothL1Loss()
             self.model.train()
             batch_size = min(128, len(tx))
-            for _ in range(self.epochs):
+            for _ in tqdm(range(self.epochs), desc="LSTM training", unit="epoch", leave=False):
                 order = torch.randperm(len(tx))
                 for ids in order.split(batch_size):
                     optimizer.zero_grad(set_to_none=True)
