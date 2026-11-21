@@ -88,3 +88,9 @@ and drift signals if $\max(U_t - m_t, L_t - m_t^{(L)}) > \lambda_{\text{PH}}$.
 - Alert iff $S_t>\tau$. Drift monitoring receives $x_t$ (or $z_t$ when configured).
 - If $z_t\leq\tau_{clip}$, update location with clipped EW residual $m_t=m_{t-1}+\alpha\,\mathrm{clip}(r_t,\pm\tau_{clip}q)$ and update scale slowly from clipped $|r_t|$. Large isolated residuals do not update the baseline.
 - On a drift trigger, reset location to the median of recent observations; scale remains slow to avoid absorbing a volatility burst immediately.
+
+### LSTM comparison baseline
+- A one-layer univariate LSTM maps the prior $L$ normalized observations to a one-step forecast: $\hat{x}_t=f_\theta(x_{t-L:t-1})$.
+- Fit uses only a training prefix and Smooth L1 loss. Location and scale normalization are estimated robustly from that prefix.
+- The anomaly score is the absolute normalized forecast residual $S_t=|x_t-\hat{x}_t|/s_{train}$. Threshold is the 99th percentile of normal validation residuals; validation labels are not used to fit model weights or threshold.
+- With hidden width $H$, lookback $L$, $N$ training observations and $E$ epochs, approximate training time is $O(E N L H^2)$; inference is $O(LH^2)$ per point. Parameter count is $O(H^2)$ for one layer. This adds framework/runtime overhead and model fitting cost relative to the rolling statistical methods.

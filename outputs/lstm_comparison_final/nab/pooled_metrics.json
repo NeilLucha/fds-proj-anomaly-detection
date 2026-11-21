@@ -1,0 +1,68 @@
+{
+  "A": {
+    "pointwise_micro": {
+      "precision": 0.0654968373801265,
+      "recall": 0.19913151364764267,
+      "f1": 0.0985720865960387,
+      "false_alert_count": 4580,
+      "zero_event_fpr": 0.24692689238731938
+    },
+    "pointwise_macro_positive_series_f1": 0.1162839755102781,
+    "zero_event_mean_fpr": 0.4367559523809524,
+    "zero_event_false_alert_count": 1761,
+    "event_window_macro_f1": 0.08018068887634104
+  },
+  "B": {
+    "pointwise_micro": {
+      "precision": 0.056779246206558984,
+      "recall": 0.07196029776674938,
+      "f1": 0.06347469220246238,
+      "false_alert_count": 1927,
+      "zero_event_fpr": 0.1038926029760621
+    },
+    "pointwise_macro_positive_series_f1": 0.06865846108143174,
+    "zero_event_mean_fpr": 0.18625992063492064,
+    "zero_event_false_alert_count": 751,
+    "event_window_macro_f1": 0.07290843214756258
+  },
+  "C": {
+    "pointwise_micro": {
+      "precision": 0.05379502241459267,
+      "recall": 0.21588089330024815,
+      "f1": 0.08612795446108154,
+      "false_alert_count": 6121,
+      "zero_event_fpr": 0.33000862626698296
+    },
+    "pointwise_macro_positive_series_f1": 0.13047390389612173,
+    "zero_event_mean_fpr": 0.6021825396825397,
+    "zero_event_false_alert_count": 2428,
+    "event_window_macro_f1": 0.033158010430737704
+  },
+  "D": {
+    "pointwise_micro": {
+      "precision": 0.09606469002695418,
+      "recall": 0.5527295285359801,
+      "f1": 0.16368145494626618,
+      "false_alert_count": 8384,
+      "zero_event_fpr": 0.4520163899072676
+    },
+    "pointwise_macro_positive_series_f1": 0.21015746580955408,
+    "zero_event_mean_fpr": 0.9117063492063492,
+    "zero_event_false_alert_count": 3676,
+    "event_window_macro_f1": 0.08222907825180552
+  },
+  "LSTM": {
+    "pointwise_micro": {
+      "precision": 0.3380681818181818,
+      "recall": 0.07382133995037221,
+      "f1": 0.12118126272912423,
+      "false_alert_count": 233,
+      "zero_event_fpr": 0.012562001293940047
+    },
+    "pointwise_macro_positive_series_f1": 0.11111317946036081,
+    "zero_event_mean_fpr": 0.006944444444444444,
+    "zero_event_false_alert_count": 28,
+    "event_window_macro_f1": 0.047065940713853595,
+    "training_time_s_total": 5.3504137999989325
+  }
+}

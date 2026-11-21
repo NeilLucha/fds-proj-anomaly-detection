@@ -353,7 +353,7 @@ Data are split **in time order** (no shuffling) to avoid look-ahead bias:
 
 Threshold `τ` is selected by maximising F1 on the **validation split only**. The test split is not inspected until a single final evaluation run.
 
-### Exploratory NAB Results
+### Exploratory NAB Results (statistical variants)
 
 Series-level pooled threshold run (`outputs/benchmark_v4_series_split_full/nab`, 18 validation and 40 test series; 16/18 and 36/40 contain labels). The shared threshold was `τ=1.5` for all variants. Results are illustrative for this deterministic split, not a leaderboard claim.
 
@@ -363,6 +363,8 @@ Series-level pooled threshold run (`outputs/benchmark_v4_series_split_full/nab`,
 | B | 0.061 | 0.069 | 0.098 | 0.133 |
 | C | 0.192 | 0.193 | 0.050 | 0.228 |
 | D | 0.216 | 0.213 | 0.049 | 0.286 |
+
+The LSTM comparison uses a one-layer, 16-unit PyTorch predictor, 24-step lookback, five epochs, robust normalization, and a 99th-percentile normal validation residual threshold. On a stratified 8-series sample (4 test series with labels), LSTM scored **0.121 pointwise micro F1**, **0.047 event/window macro F1**, and **0.007 mean zero-event FPR**. Version D scored 0.164, 0.082, and 0.912 on the same sample. The pooled LSTM training took 26.75 s and test inference took 0.077 s; the model had 1,233 parameters. Statistical variants have no fit phase, use O(W) memory, and took 0.12–0.78 s total inference by variant. See `outputs/lstm_comparison_final/nab/complexity_timing.json` for measurements and asymptotic estimates. These results are small-sample comparisons, not broad performance claims.
 
 Yahoo S5 A1–A4 results are unavailable until the user-licensed data is placed under `data/raw/yahoo_s5/`.
 

@@ -34,6 +34,7 @@ if str(PROJECT_ROOT / "src") not in sys.path:
 from drift_anomaly.data.nab import NABLoader
 from drift_anomaly.data.yahoo_s5 import YahooS5Loader
 from drift_anomaly.detectors import VersionA, VersionB, VersionC, VersionD
+from drift_anomaly.detectors.lstm import LSTMAnomalyDetector
 from drift_anomaly.pipeline.evaluate import evaluate_detector
 from drift_anomaly.pipeline.metrics import compute_metrics, event_window_metrics, evaluate_pointwise_macro
 from drift_anomaly.pipeline.reporting import (
@@ -59,6 +60,8 @@ VARIANTS = {
     "C": VersionC,
     "D": VersionD,
 }
+
+LSTM_SETTINGS = {"lookback": 24, "hidden_size": 16, "epochs": 5, "learning_rate": 0.01, "seed": 42}
 
 
 def tune_pooled_thresholds(series_list, base_config, tau_grid):
@@ -91,9 +94,27 @@ def tune_pooled_thresholds(series_list, base_config, tau_grid):
             if metrics["f1"] > best_f1:
                 best_tau, best_f1 = tau, metrics["f1"]
         best_taus[name] = best_tau
+    calibration_start = time.perf_counter()
+    pooled_validation_values = np.concatenate([
+        np.asarray(s.values, dtype=float) for s in validation
+    ]) if validation else np.asarray([], dtype=float)
+    calibration_model = LSTMAnomalyDetector(**LSTM_SETTINGS)
+    calibration_model.fit(pooled_validation_values)
+    calibration_residuals = []
+    for series in validation:
+        scored = calibration_model.score(series.values, context=[])
+        calibration_residuals.extend(
+            float(score) for score, label in zip(scored.scores, series.labels) if not label
+        )
+    best_taus["LSTM"] = calibration_model.threshold_from(calibration_residuals, target_fpr=0.01)
+    lstm_calibration = {
+        "training_time_s": time.perf_counter() - calibration_start,
+        "normal_residual_count": len(calibration_residuals),
+        "model": calibration_model,
+    }
     validation_ids = {id(s) for s in validation}
     test_series = [s for s in series_list if id(s) not in validation_ids]
-    return best_taus, validation, test_series
+    return best_taus, validation, test_series, lstm_calibration
 
 
 def load_dataset(
@@ -270,13 +291,24 @@ def main():
     # 1. Load data
     series_list = load_dataset(
         args.dataset,
-        max_series=args.max_series,
+        max_series=None,
         use_windows=(args.dataset.lower() == "nab"),
         filter_anomalous=not args.include_all,
     )
     if not series_list:
         logger.error("No series loaded for '%s'. Exiting.", args.dataset)
         return
+
+    if args.max_series and len(series_list) > args.max_series:
+        positives = [s for s in series_list if sum(s.labels) > 0]
+        controls = [s for s in series_list if sum(s.labels) == 0]
+        n_pos = min(len(positives), max(1, int(round(args.max_series * 0.8))))
+        n_ctrl = min(len(controls), args.max_series - n_pos)
+        selected = positives[:n_pos] + controls[:n_ctrl]
+        if len(selected) < args.max_series:
+            remaining = [s for s in series_list if s not in selected]
+            selected.extend(remaining[: args.max_series - len(selected)])
+        series_list = selected
 
     logger.info("Loaded %d series from %s", len(series_list), args.dataset.upper())
 
@@ -303,12 +335,12 @@ def main():
     )
     tau_grid = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
-    all_results_by_variant: Dict[str, List[EvalMetrics]] = {v: [] for v in VARIANTS}
+    all_results_by_variant: Dict[str, List[EvalMetrics]] = {v: [] for v in [*VARIANTS, "LSTM"]}
     detailed_log: List[dict] = []
     pooled_taus = {}
     pooled_validation, pooled_test = [], []
     if args.series_split:
-        pooled_taus, pooled_validation, pooled_test = tune_pooled_thresholds(
+        pooled_taus, pooled_validation, pooled_test, pooled_lstm_calibration = tune_pooled_thresholds(
             series_list, base_config, tau_grid
         )
         series_list = pooled_test
@@ -333,13 +365,16 @@ def main():
 
         if args.series_split:
             train_ts = TimeSeries(points=[], name=s.name)
-            val_ts = TimeSeries(points=s.points if id(s) in pooled_validation_ids else [], name=s.name)
+            val_ts = TimeSeries(points=[], name=s.name)
             test_ts = s
             best_taus = pooled_taus
             metrics_map = {}
             for v, Cls in VARIANTS.items():
                 cfg = dataclasses.replace(base_config, tau=best_taus[v])
                 metrics_map[v] = compute_metrics(Cls(cfg).run(test_ts), test_ts)
+            lstm_train = TimeSeries(points=[], name=s.name)
+            lstm_scored = s
+            lstm_context = []
         else:
             train_ts, val_ts, test_ts = temporal_split(
                 s, val_fraction=args.val_fraction, test_fraction=args.test_fraction
@@ -351,17 +386,64 @@ def main():
                 val_fraction=args.val_fraction,
                 test_fraction=args.test_fraction,
             )
+            lstm_train = train_ts
+            lstm_scored = test_ts
+            lstm_context = train_ts.values + val_ts.values
+
+        lstm = LSTMAnomalyDetector(**LSTM_SETTINGS)
+        if args.series_split:
+            lstm_model = pooled_lstm_calibration["model"]
+            lstm_training_time = pooled_lstm_calibration["training_time_s"]
+            lstm_result = lstm_model.score(
+                lstm_scored.values, tau=best_taus.get("LSTM", 3.0), context=[]
+            )
+        else:
+            lstm_training_time = lstm.fit(lstm_train.values)
+            lstm_result = lstm.score(
+                lstm_scored.values, tau=best_taus.get("LSTM", 3.0), context=lstm_context
+            )
+        lstm_result.training_time_s = lstm_training_time
+        lstm_truth = np.asarray(lstm_scored.labels, dtype=int)
+        from drift_anomaly.pipeline.metrics import compute_point_metrics
+        lstm_point = compute_point_metrics(lstm_truth, lstm_result.alerts.astype(int), lstm_result.scores)
+        lstm_metric_map = {
+            **lstm_point,
+            "n_drift_triggers": 0,
+            "false_drift_rate": 0.0,
+            "adaptation_accepted": 0,
+            "adaptation_rejected": 0,
+            "runtime_s": lstm_result.inference_time_s,
+            "training_time_s": lstm_result.training_time_s,
+            "inference_time_s": lstm_result.inference_time_s,
+            "parameter_count": lstm_result.parameter_count,
+            "complexity_training": f"O(E*N*L*H^2), E={lstm.epochs}, L={lstm.lookback}, H={lstm.hidden_size}",
+            "complexity_inference_per_step": f"O(L*H^2), L={lstm.lookback}, H={lstm.hidden_size}",
+        }
+        metrics_map["LSTM"] = EvalMetrics(
+            precision=lstm_point["precision"], recall=lstm_point["recall"], f1=lstm_point["f1"],
+            roc_auc=lstm_point["roc_auc"], pr_auc=lstm_point["pr_auc"], n_drift_triggers=0,
+            false_drift_rate=0.0, adaptation_accepted=0, adaptation_rejected=0,
+            runtime_s=lstm_result.inference_time_s,
+        )
 
         series_entry = {
             "series": s.name,
             "length": len(s),
             "test_length": len(test_ts),
-            "train_anomalies": int(sum(train_ts.labels)),
-            "validation_anomalies": int(sum(val_ts.labels)),
+            "train_anomalies": int(sum(train_ts.labels)) if not args.series_split else 0,
+            "validation_anomalies": int(sum(val_ts.labels)) if not args.series_split else 0,
             "test_anomalies": int(sum(test_ts.labels)),
             "best_taus": best_taus,
             "tuning_protocol": "pooled_series_holdout" if args.series_split else "temporal_within_series",
             "metrics": {v: dataclasses.asdict(metrics_map[v]) for v in VARIANTS},
+        }
+        series_entry["metrics"]["LSTM"] = lstm_metric_map
+        series_entry["runtime"] = {
+            "lstm_training_time_s": lstm_result.training_time_s,
+            "lstm_inference_time_s": lstm_result.inference_time_s,
+            "lstm_parameter_count": lstm_result.parameter_count,
+            "lstm_complexity_training": lstm_metric_map["complexity_training"],
+            "lstm_complexity_inference_per_step": lstm_metric_map["complexity_inference_per_step"],
         }
 
         prefix = TimeSeries(
@@ -381,9 +463,16 @@ def main():
                 float(np.mean(pred)) if not truth.any() and len(pred) else 0.0
             )
             point_data[v] = {"truth": truth.tolist(), "pred": pred.tolist()}
+        lstm_truth_bool = lstm_truth.astype(bool)
+        series_entry["metrics"]["LSTM"].update(event_window_metrics(lstm_truth_bool, lstm_result.alerts))
+        series_entry["metrics"]["LSTM"]["false_alert_count"] = int(np.sum(lstm_result.alerts & ~lstm_truth_bool))
+        series_entry["metrics"]["LSTM"]["zero_event_fpr"] = (
+            float(np.mean(lstm_result.alerts)) if not lstm_truth_bool.any() and len(lstm_truth_bool) else 0.0
+        )
+        point_data["LSTM"] = {"truth": lstm_truth_bool.tolist(), "pred": lstm_result.alerts.tolist()}
         series_entry["_point_data"] = point_data
         detailed_log.append(series_entry)
-        for v in VARIANTS:
+        for v in [*VARIANTS, "LSTM"]:
             all_results_by_variant[v].append(metrics_map[v])
 
         # Plot individual test series diagnostics for the first 3 series
@@ -407,6 +496,15 @@ def main():
                     title=f"{s.name} (Test Split) — Variant {v} (τ={best_taus[v]:.1f})",
                     output_path=plot_file,
                 )
+            plot_series_with_anomalies(
+                values=np.asarray(test_ts.values),
+                true_labels=lstm_truth,
+                pred_labels=lstm_result.alerts.astype(int),
+                scores=lstm_result.scores,
+                drift_events=[],
+                title=f"{s.name} (Test Split) — LSTM",
+                output_path=plots_dir / f"{clean_name}_variant_LSTM.png",
+            )
 
     # 3. Save aggregated reports
     summary_json_path = out_dir / "evaluation_summary.json"
@@ -414,7 +512,7 @@ def main():
         json.dump(detailed_log, fh, indent=2)
     logger.info("Saved JSON summary to %s", summary_json_path)
 
-    for v in VARIANTS:
+    for v in [*VARIANTS, "LSTM"]:
         csv_path = out_dir / f"metrics_variant_{v}.csv"
         save_metrics_csv(all_results_by_variant[v], csv_path)
 
@@ -424,8 +522,9 @@ def main():
     logger.info("Saved comparative bar chart to %s", comparison_plot_path)
 
     pooled_summary = {}
-    for v in VARIANTS:
+    for v in [*VARIANTS, "LSTM"]:
         truth_parts, pred_parts, macro_f1, event_f1 = [], [], [], []
+        zero_fprs, zero_false_alerts = [], 0
         zero_fprs, zero_false_alerts = [], 0
         for entry in detailed_log:
             truth = np.asarray(entry["_point_data"][v]["truth"], dtype=bool)
@@ -458,6 +557,9 @@ def main():
             "zero_event_false_alert_count": point_aggregate["zero_event_series_false_alerts"],
             "event_window_macro_f1": float(np.mean(event_f1)) if event_f1 else 0.0,
         }
+    pooled_summary["LSTM"]["training_time_s_total"] = float(sum(
+        entry["metrics"]["LSTM"]["training_time_s"] for entry in detailed_log
+    )) if not args.series_split else float(pooled_lstm_calibration["training_time_s"])
     for entry in detailed_log:
         entry.pop("_point_data", None)
     with summary_json_path.open("w", encoding="utf-8") as fh:
@@ -465,6 +567,24 @@ def main():
                    "validation_series": [s.name for s in pooled_validation],
                    "shared_best_taus": pooled_taus}, fh, indent=2)
     (out_dir / "pooled_metrics.json").write_text(json.dumps(pooled_summary, indent=2), encoding="utf-8")
+    timing = {}
+    for variant, cls in VARIANTS.items():
+        timing[variant] = {
+            "training_time_s": 0.0,
+            "inference_time_s": float(sum(m.runtime_s for m in all_results_by_variant[variant])),
+            "time_complexity_per_point": "O(W log W) robust median/MAD update",
+            "memory_complexity": "O(W)",
+        }
+    timing["LSTM"] = {
+        "training_time_s": float(sum(e["metrics"]["LSTM"]["training_time_s"] for e in detailed_log)),
+        "inference_time_s": float(sum(e["metrics"]["LSTM"]["inference_time_s"] for e in detailed_log)),
+        "parameter_count": int(np.mean([e["metrics"]["LSTM"]["parameter_count"] for e in detailed_log])) if detailed_log else 0,
+        "time_complexity_training": "O(E*N*L*H^2) per series, minibatched BPTT",
+        "time_complexity_inference": "O(L*H^2) per forecasted point",
+        "memory_complexity": "O(L*H + P + B*L), P parameters, B minibatch size",
+        "settings": LSTM_SETTINGS,
+    }
+    (out_dir / "complexity_timing.json").write_text(json.dumps(timing, indent=2), encoding="utf-8")
 
     # 5. Print terminal summary
     print("\n" + "=" * 80)
@@ -472,7 +592,7 @@ def main():
     print("=" * 80)
     print(f"{'Variant':<10} {'Point F1':<12} {'Event F1':<12} {'Zero-event FPR':<15} {'Macro F1+':<12}")
     print("-" * 68)
-    for v in VARIANTS:
+    for v in [*VARIANTS, "LSTM"]:
         v_metrics = all_results_by_variant[v]
         agg = pooled_summary[v]
         print(f"{v:<10} {agg['pointwise_micro']['f1']:<12.4f} {agg['event_window_macro_f1']:<12.4f} "

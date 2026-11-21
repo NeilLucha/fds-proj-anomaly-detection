@@ -249,7 +249,7 @@ def plot_metrics_comparison(
     x = np.arange(len(metric_keys))
     width = 0.8 / max(len(variant_names), 1)
 
-    fig, ax = plt.subplots(figsize=(9, 5))
+    fig, ax = plt.subplots(figsize=(max(9, len(variant_names) * 1.6), 5))
     colors = plt.cm.tab10(np.linspace(0, 1, len(variant_names)))  # type: ignore[attr-defined]
 
     for i, (vname, color) in enumerate(zip(variant_names, colors)):

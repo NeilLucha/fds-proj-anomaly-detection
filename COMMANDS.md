@@ -65,6 +65,8 @@ python scripts/run_real_benchmarks.py --dataset yahoo --series-split --output-di
 
 `--series-split` tunes one shared threshold per variant on a deterministic stratified 30% series holdout and reports pooled pointwise and event/window metrics plus zero-event false-alert rates. Yahoo S5 must be downloaded under its academic license first. The benchmark script also supports temporal within-series tuning when `--series-split` is omitted.
 
+Both commands include a small PyTorch LSTM forecasting baseline and emit `complexity_timing.json` with measured fit/inference time, parameter count, and rough asymptotic cost. PyTorch is optional for the core package; install it separately to run this comparison.
+
 ---
 
 ## 5. Tune Threshold (Validation Only)
