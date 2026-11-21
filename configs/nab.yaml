@@ -1,0 +1,48 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# configs/nab.yaml
+# Configuration for running drift-anomaly detectors on the NAB dataset.
+# NAB series are typically longer with more complex temporal structure,
+# so we use larger windows.
+# ──────────────────────────────────────────────────────────────────────────────
+
+dataset: nab
+variant: A
+
+# --- Baseline window ---
+window_size: 200          # L  – larger window for longer NAB series
+candidate_size: 50        # M  – larger candidate window
+
+# --- Anomaly detection ---
+tau: 3.0
+epsilon: 1.0e-6
+
+# --- Drift detector ---
+drift_detector: adwin
+adwin_delta: 0.002
+ph_lambda: 100.0          # higher threshold – NAB series are noisier
+ph_delta: 0.002
+
+# --- Contamination gate (Version A) ---
+tau_cand: 3.0
+rho_max: 0.25             # stricter contamination limit for NAB
+kappa_max: 4.0            # NAB can have higher volatility shifts
+
+# --- Frozen window (Version C) ---
+freeze_window: 200        # L0 – matches window_size
+adaptation_mode: delayed
+hold_steps: 50            # H  – longer hold for noisier NAB series
+cooldown: 20
+
+# --- Miscellaneous ---
+feed_scores: false
+
+# --- Data root (default; override via CLI) ---
+data_root: data/nab
+
+# --- Pipeline splits ---
+val_fraction: 0.2
+test_fraction: 0.2
+
+# --- Output ---
+make_plots: true
+output_dir: outputs/nab

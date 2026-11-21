@@ -1,0 +1,12 @@
+{
+  "precision": 0.0,
+  "recall": 0.0,
+  "f1": 0.0,
+  "roc_auc": 0.5,
+  "pr_auc": 0.0,
+  "n_drift_triggers": 1,
+  "false_drift_rate": 1.0,
+  "adaptation_accepted": 1,
+  "adaptation_rejected": 0,
+  "runtime_s": 0.005540300000120624
+}

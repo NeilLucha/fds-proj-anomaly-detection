@@ -1,0 +1,54 @@
+{
+  "A": {
+    "pointwise_micro": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "false_alert_count": 3400,
+      "zero_event_fpr": 0.2810846560846561
+    },
+    "pointwise_macro_positive_series_f1": 0.0,
+    "zero_event_mean_fpr": 0.2810846560846561,
+    "zero_event_false_alert_count": 3400,
+    "event_window_macro_f1": 0.0
+  },
+  "B": {
+    "pointwise_micro": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "false_alert_count": 1225,
+      "zero_event_fpr": 0.10127314814814815
+    },
+    "pointwise_macro_positive_series_f1": 0.0,
+    "zero_event_mean_fpr": 0.10127314814814814,
+    "zero_event_false_alert_count": 1225,
+    "event_window_macro_f1": 0.0
+  },
+  "C": {
+    "pointwise_micro": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "false_alert_count": 4247,
+      "zero_event_fpr": 0.35110780423280424
+    },
+    "pointwise_macro_positive_series_f1": 0.0,
+    "zero_event_mean_fpr": 0.3511078042328042,
+    "zero_event_false_alert_count": 4247,
+    "event_window_macro_f1": 0.0
+  },
+  "D": {
+    "pointwise_micro": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "false_alert_count": 6280,
+      "zero_event_fpr": 0.5191798941798942
+    },
+    "pointwise_macro_positive_series_f1": 0.0,
+    "zero_event_mean_fpr": 0.5191798941798942,
+    "zero_event_false_alert_count": 6280,
+    "event_window_macro_f1": 0.0
+  }
+}

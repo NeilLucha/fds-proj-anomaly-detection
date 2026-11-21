@@ -1,0 +1,43 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# configs/synthetic.yaml
+# Configuration for running drift-anomaly detectors on the synthetic dataset.
+# ──────────────────────────────────────────────────────────────────────────────
+
+dataset: synthetic
+variant: A
+
+# --- Baseline window ---
+window_size: 100          # L  – rolling baseline window length
+candidate_size: 30        # M  – candidate window collected after drift
+
+# --- Anomaly detection ---
+tau: 3.0                  # anomaly threshold (multiples of sigma_hat)
+epsilon: 1.0e-6           # floor to avoid zero denominator
+
+# --- Drift detector ---
+drift_detector: adwin     # "adwin" | "page-hinkley"
+adwin_delta: 0.002        # ADWIN false-positive parameter δ
+ph_lambda: 50.0           # Page-Hinkley threshold λ
+ph_delta: 0.005           # Page-Hinkley sensitivity δ
+
+# --- Contamination gate (Version A) ---
+tau_cand: 3.0             # anomaly threshold inside candidate check
+rho_max: 0.3              # max allowed fraction of anomalous points
+kappa_max: 3.0            # max allowed MAD ratio
+
+# --- Frozen window (Version C) ---
+freeze_window: 100        # L0 – initial frozen reference window
+adaptation_mode: delayed  # "immediate" | "delayed"
+hold_steps: 30            # H  – steps to hold before accepting candidate
+cooldown: 10              # min steps between consecutive drift triggers
+
+# --- Miscellaneous ---
+feed_scores: false        # feed anomaly scores (not raw values) to drift detector
+
+# --- Pipeline splits ---
+val_fraction: 0.2
+test_fraction: 0.2
+
+# --- Output ---
+make_plots: true
+output_dir: outputs/synthetic

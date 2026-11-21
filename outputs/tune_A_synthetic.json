@@ -1,0 +1,102 @@
+{
+  "best_tau": 1.5,
+  "best_f1": 0.0,
+  "grid": {
+    "1.5": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.24747474747474746,
+      "pr_auc": 0.005,
+      "n_drift_triggers": 0,
+      "false_drift_rate": 0.0,
+      "adaptation_accepted": 0,
+      "adaptation_rejected": 0,
+      "runtime_s": 0.006812999999965541
+    },
+    "2.0": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.24747474747474746,
+      "pr_auc": 0.005,
+      "n_drift_triggers": 0,
+      "false_drift_rate": 0.0,
+      "adaptation_accepted": 0,
+      "adaptation_rejected": 0,
+      "runtime_s": 0.007853300000078889
+    },
+    "2.5": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.24747474747474746,
+      "pr_auc": 0.005,
+      "n_drift_triggers": 0,
+      "false_drift_rate": 0.0,
+      "adaptation_accepted": 0,
+      "adaptation_rejected": 0,
+      "runtime_s": 0.007175799999913579
+    },
+    "3.0": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.24747474747474746,
+      "pr_auc": 0.005,
+      "n_drift_triggers": 0,
+      "false_drift_rate": 0.0,
+      "adaptation_accepted": 0,
+      "adaptation_rejected": 0,
+      "runtime_s": 0.006897400000070775
+    },
+    "3.5": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.24747474747474746,
+      "pr_auc": 0.005,
+      "n_drift_triggers": 0,
+      "false_drift_rate": 0.0,
+      "adaptation_accepted": 0,
+      "adaptation_rejected": 0,
+      "runtime_s": 0.008064299999659852
+    },
+    "4.0": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.24747474747474746,
+      "pr_auc": 0.005,
+      "n_drift_triggers": 0,
+      "false_drift_rate": 0.0,
+      "adaptation_accepted": 0,
+      "adaptation_rejected": 0,
+      "runtime_s": 0.005986399999983405
+    },
+    "4.5": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.24747474747474746,
+      "pr_auc": 0.005,
+      "n_drift_triggers": 0,
+      "false_drift_rate": 0.0,
+      "adaptation_accepted": 0,
+      "adaptation_rejected": 0,
+      "runtime_s": 0.006591200000002573
+    },
+    "5.0": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "roc_auc": 0.24747474747474746,
+      "pr_auc": 0.005,
+      "n_drift_triggers": 0,
+      "false_drift_rate": 0.0,
+      "adaptation_accepted": 0,
+      "adaptation_rejected": 0,
+      "runtime_s": 0.005788799999663752
+    }
+  }
+}

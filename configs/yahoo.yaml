@@ -1,0 +1,48 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# configs/yahoo.yaml
+# Configuration for running drift-anomaly detectors on the Yahoo S5 dataset.
+# Yahoo S5 benchmark series are shorter (usually ~1500 pts) with sharp
+# point anomalies, so we use moderate window sizes.
+# ──────────────────────────────────────────────────────────────────────────────
+
+dataset: yahoo
+variant: A
+
+# --- Baseline window ---
+window_size: 150          # L  – moderate window for Yahoo series length
+candidate_size: 40        # M
+
+# --- Anomaly detection ---
+tau: 2.5                  # slightly lower threshold – Yahoo has clear point anomalies
+epsilon: 1.0e-6
+
+# --- Drift detector ---
+drift_detector: adwin
+adwin_delta: 0.002
+ph_lambda: 75.0
+ph_delta: 0.003
+
+# --- Contamination gate (Version A) ---
+tau_cand: 2.5
+rho_max: 0.2              # stricter – Yahoo anomalies are well-separated
+kappa_max: 3.0
+
+# --- Frozen window (Version C) ---
+freeze_window: 150        # L0 – matches window_size
+adaptation_mode: delayed
+hold_steps: 40            # H
+cooldown: 15
+
+# --- Miscellaneous ---
+feed_scores: false
+
+# --- Data root (default; override via CLI) ---
+data_root: data/yahoo
+
+# --- Pipeline splits ---
+val_fraction: 0.2
+test_fraction: 0.2
+
+# --- Output ---
+make_plots: true
+output_dir: outputs/yahoo
