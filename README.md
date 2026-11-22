@@ -15,7 +15,7 @@
 3. [Architecture](#architecture)
 4. [Quickstart](#quickstart)
 5. [Dataset Notes](#dataset-notes)
-6. [Three Variants](#three-variants)
+6. [Detectors and Comparison Baselines](#detectors-and-comparison-baselines)
 7. [Evaluation Methodology](#evaluation-methodology)
 8. [Configuration](#configuration)
 9. [CLI Reference](#cli-reference)
@@ -296,50 +296,39 @@ drift-anomaly generate-synthetic
 
 ---
 
-## Three Variants
+## Detectors and Comparison Baselines
 
-| Feature | **Version A** | **Version B** | **Version C** | **Version D** |
-|---------|--------------|--------------|--------------|--------------|
-| **Reference window** | Rolling (last L obs) | Rolling (last L obs) | Frozen (initial L₀ obs) |
-| **Drift detector** | ADWIN or PH | ADWIN or PH | ADWIN or PH |
-| **On drift detected** | Collect M-point candidate; apply contamination gate | Roll window forward immediately | Collect H-step candidate; accept or keep frozen |
-| **Contamination gate** | ✅ Anomaly fraction + volatility ratio | ❌ None | ✅ Anomaly fraction + volatility ratio |
-| **Adaptation mode** | Automatic (gate controls) | Immediate | `immediate` or `delayed` |
-| **False-alarm robustness** | High (gate rejects noisy candidates) | Low (any drift triggers update) | High (frozen reference is stable) |
-| **True drift tracking** | Medium (gate may reject valid shifts) | High (always adapts) | Medium (delayed acceptance) |
-| **Hyperparameters** | L, M, τ, δ_adwin, τ_cand, ρ_max, κ_max | L, τ, δ_adwin | L₀, H, τ, δ_adwin, adapt_mode |
-| **Best for** | Noisy real-world data with spurious spikes | Clean data with clear concept drift | Slowly evolving systems needing stable reference |
-| **Scoring** | Rolling median/MAD | Rolling median/MAD | Frozen median/MAD | Clipped robust innovation and scale |
+The project includes seven statistical or learned detectors and three additional reference baselines. Every online detector scores the current point using past observations only. The report benchmark compares all ten on NAB and Yahoo S5.
 
-### Version A — Cautious Rolling Baseline
+| Model | Family | Scoring and adaptation | Fit cost |
+|---|---|---|---|
+| **A** | Statistical, contamination-gated rolling | Rolling robust baseline; drift candidate updates pass anomaly-fraction and dispersion gates. | No learned fit |
+| **B** | Statistical, simple rolling | Continuously updates a rolling robust baseline; ADWIN is used for drift telemetry. | No learned fit |
+| **C** | Statistical, frozen/delayed | Keeps the initial robust baseline until a drift candidate is accepted in immediate or delayed mode. | No learned fit |
+| **D** | Statistical, adaptive innovation | Scores causal innovations and volatility; clipped updates limit the effect of large residuals. | No learned fit |
+| **E** | Statistical, causal residual | Uses a MAD/IQR scale floor, local trend and optional seasonal-lag residuals, persistence, and drift-gated reset. | No learned fit |
+| **E2** | Statistical, dual-tier trigger | Extends E with immediate alerts for extreme scores and persistence for moderate scores. | No learned fit |
+| **LSTM** | Neural forecast model | Forecasts the next point from a lookback window; threshold is calibrated using validation residuals. | Trained on the training split |
+| **EWMA** | Online statistical baseline | Scores a standardized residual from causal exponentially weighted mean/variance, then updates state. | O(N) streaming initialization |
+| **River_HST** | Online tree anomaly baseline | Half-Space Trees score each point before `learn_one`; feature scaling and limits use training data only. | O(N * trees * height) |
+| **Lag_IForest** | Batch tree baseline | Fits Isolation Forest on training-only lag vectors `[x_(t-1), ..., x_(t-L)]`; model stays fixed during validation/test scoring. | O(T * trees * subsample * log(subsample)) |
 
-After ADWIN detects drift, Version A accumulates `M` fresh observations into a *candidate window* and applies the contamination gate before updating the baseline. If more than `ρ_max` fraction of candidate points look anomalous (relative to the old baseline at threshold `τ_cand`), or if the candidate's MAD is more than `κ_max` times the old MAD, the update is **rejected** and the old baseline is kept.
+### Statistical detector details
 
-### Version B — Simple Rolling + ADWIN
+- **A - Cautious Rolling Baseline:** After drift, gathers an `M`-point candidate. It accepts the update only if candidate contamination and dispersion stay within configured `rho_max` and `kappa_max` limits.
+- **B - Simple Rolling + ADWIN:** Uses the last `L` observations continuously and has no candidate contamination gate. This keeps the method simple but can absorb anomaly bursts into its baseline.
+- **C - Frozen-Window Detector:** Anchors its baseline on the initial `L0` points. It can refresh immediately or wait `H` steps and validate a candidate before changing the reference.
+- **D - Clipped Robust Innovation Tracker:** Scores `r_t = x_t - m_(t-1)` against prior robust scales. Clipped EW updates reduce the effect of large residuals on the baseline.
+- **E - Causal Robust Residual:** Uses `max(1.4826*MAD, alpha*IQR, sigma_floor)`, a local linear predictor, and an optional warm-up-selected seasonal lag. It uses causal score calibration and persistence filtering.
+- **E2 - Dual-Tier Spike + Persistence:** Alerts immediately above an extreme threshold; moderate scores require at least two threshold crossings in the recent K steps. Its parameters are selected on validation data with a false-positive constraint.
 
-The simplest variant. The reference window is always the last `L` observations. When ADWIN fires, the ADWIN internal state is reset (allowing re-detection). No candidate phase, no contamination gate. Fast and easy to interpret but susceptible to false drift triggers that cause momentarily skewed baselines.
+### Report comparison protocol
 
-### Version C — Frozen-Window Detector
+`scripts/run_report_benchmarks.py` adds EWMA, River HST, and Lag_IForest without replacing or modifying A-D, E, E2, or LSTM. It uses chronological train/validation/test splits. EWMA and HST update only after scoring the current observation; Lag_IForest uses past-only lag features and never fits on validation or test data. Added-baseline thresholds are selected on validation data using `0.5 * Point F1 + 0.5 * Event F1`, subject to a 0.10 validation negative-point FPR cap; the report marks a lowest-FPR fallback when no candidate meets the cap.
 
-An initial window of `L₀` observations anchors the baseline. When drift is detected the detector either:
-- **Immediate mode**: replaces the baseline at once from the post-drift buffer.
-- **Delayed mode**: waits `H` steps, collects a candidate, then applies the contamination gate.
-
-The reference is otherwise frozen — it never rolls — so the scorer is immune to gradual drift but blind to slow distribution shift.
-
-### Version D — Clipped Robust Innovation Tracker
-
-Version D scores the causal innovation `r_t = x_t - m_(t-1)` using prior robust scale `q_(t-1)`, and combines innovation and slow volatility channels as `S_t = max(|r_t|/q_(t-1), |r_t|/v_(t-1))`. Alerts occur when `S_t > τ`. Ordinary residuals update location with clipped EW steps and update scale slowly; large residuals are excluded from baseline updates. A drift trigger resets location to the median of recent observations while preserving the slow scale state. This is a statistical design, not a guarantee of superior benchmark accuracy.
+The original benchmark also supports `--series-split`: A-D share a validation-selected `tau`, while E/E2 use bounded validation searches and LSTM uses fixed architecture settings with validation residual calibration. In temporal mode, A-D tune per series, E uses configured values, and E2 selects its settings from validation data. These searches are intentionally limited rather than exhaustive; see [COMMANDS.md](COMMANDS.md) for the exact commands and tuning spaces. Progress bars show threshold selection, E/E2 validation tuning, test-series scoring, and LSTM epochs.
 
 ---
-
-### Version E and E2 - Causal Drift-Aware Statistical Detectors
-
-E is an experimental, training-free comparison pipeline. It scores using prior observations only, applies the scale floor `max(1.4826*MAD, alpha*IQR, sigma_floor)`, combines a local linear extrapolation residual with an optional causal seasonal-lag residual, and uses extreme-score / 2-of-K persistence alerting. Once 20 accepted low-score observations are available, a causal running score quantile adjusts both alert thresholds; only prior non-alert scores enter that history. Drift monitoring receives clipped residuals and resets only when recent dispersion is compatible with the prior baseline. An automatically selected lag is selected during warm-up and then frozen. E costs `O(W log W)` work per point and `O(W)` memory: the same asymptotic order as robust rolling methods but with more work per point, and no model fitting phase.
-
-The real benchmark compares `A`, `B`, `C`, `D`, `E`, and `LSTM`. In `--series-split` mode E settings are selected using validation-side series and scored on held-out test series. In temporal mode E uses its configured values without an E hyperparameter search, keeping the held-out time suffix out of selection.
-
-The benchmark displays progress for threshold search, E and E2 validation ablations, each test series, and LSTM training epochs. E2 adds immediate alerts for extreme spikes while keeping a persistence requirement for moderate scores. It does not perform an exhaustive search over every detector parameter: see [COMMANDS.md](COMMANDS.md) for the exact search spaces and fixed LSTM settings.
 
 ## Evaluation Methodology
 
@@ -368,6 +357,74 @@ Older output folders contain runs with different variants, data subsets, and pro
 For the report comparison, run `python scripts/run_report_benchmarks.py --dataset nab` or `--dataset yahoo`. This standalone script retains A-D, E, E2, and LSTM, and adds EWMA, River Half-Space Trees (`River_HST`), and causal lag-window Isolation Forest (`Lag_IForest`). Added baselines tune with `0.5 * validation Point F1 + 0.5 * validation Event F1`, subject to a 0.10 validation negative-point FPR cap and an explicitly reported lowest-FPR fallback. It writes formatted strict/literature-aligned tables plus `report_benchmark_summary.json`, `pooled_metrics.json`, and `complexity_timing.json` under `outputs/report comparison/<dataset>/`. Install River with `python -m pip install river` (or `python -m pip install -e ".[report]"`). HST scores each point before learning it; Lag_IForest fits only on training lag windows.
 
 Yahoo S5 is available locally under `data/raw/yahoo_s5/`; `drift-anomaly check-yahoo --data-root data/raw/yahoo_s5` verifies the A1-A4 directories before evaluation.
+
+### Latest Report Comparison Results
+
+The following values are from the saved report comparison pooled metrics, not a new benchmark run. NAB includes 58 series and Yahoo Webscope S5 includes 367 series. The report runner used chronological 50% train, 20% validation, and 30% test splits. Added baselines select thresholds on validation data; oracle rows below are retrospective test-label threshold sweeps and are not deployable results.
+
+#### NAB: Strict Causal Metrics
+
+| Pipeline | Point F1 | Event F1 macro+ | Zero-event FPR pooled | Zero-event FPR mean | Macro F1+ |
+|---|---:|---:|---:|---:|---:|
+| A | 0.1209 | 0.1341 | 0.1236 | 0.1439 | 0.1512 |
+| B | 0.0803 | 0.1523 | 0.0588 | 0.0815 | 0.0834 |
+| C | 0.2093 | 0.1510 | 0.3166 | 0.2905 | 0.2664 |
+| D | 0.2788 | 0.1197 | 0.2260 | 0.2708 | 0.2971 |
+| E | 0.0864 | 0.2268 | 0.1220 | 0.1605 | 0.0965 |
+| E2 | 0.0917 | 0.2506 | 0.1203 | 0.1540 | 0.0946 |
+| LSTM | 0.1412 | 0.2268 | 0.0181 | 0.0203 | 0.1224 |
+| EWMA | 0.0310 | 0.3594 | 0.0068 | 0.0108 | 0.0380 |
+| River_HST | 0.1481 | 0.3725 | 0.0132 | 0.0170 | 0.1448 |
+| Lag_IForest | 0.2078 | 0.4233 | 0.0153 | 0.0214 | 0.1777 |
+
+#### NAB: Literature-Aligned Metrics
+
+| Pipeline | PA-F1 micro | PA-F1 macro+ | PR-AUC / AP+ | ROC-AUC+ | Oracle F1+ | Oracle PA-F1+ |
+|---|---:|---:|---:|---:|---:|---:|
+| A | 0.6094 | 0.6397 | 0.2589 | 0.4972 | 0.3621 | 0.8576 |
+| B | 0.7477 | 0.6810 | 0.2401 | 0.4902 | 0.3570 | 0.8770 |
+| C | 0.3995 | 0.5452 | 0.2843 | 0.5334 | 0.3854 | 0.8915 |
+| D | 0.4688 | 0.5899 | 0.3017 | 0.5676 | 0.4032 | 0.9091 |
+| E | 0.5003 | 0.5206 | 0.2440 | 0.4918 | 0.3689 | 0.8948 |
+| E2 | 0.4916 | 0.5118 | 0.2455 | 0.4852 | 0.3680 | 0.8832 |
+| LSTM | 0.8065 | 0.7734 | 0.2767 | 0.5366 | 0.3763 | 0.9441 |
+| EWMA | 0.7502 | 0.7131 | 0.2182 | 0.4855 | 0.3590 | 0.9322 |
+| River_HST | 0.6741 | 0.5974 | 0.3088 | 0.5493 | 0.4029 | 0.8980 |
+| Lag_IForest | 0.6974 | 0.6363 | 0.3529 | 0.5664 | 0.4306 | 0.8861 |
+
+#### Yahoo S5: Strict Causal Metrics
+
+| Pipeline | Point F1 | Event F1 macro+ | Zero-event FPR pooled | Zero-event FPR mean | Macro F1+ |
+|---|---:|---:|---:|---:|---:|
+| A | 0.0858 | 0.1464 | 0.0420 | 0.0420 | 0.0997 |
+| B | 0.1027 | 0.1078 | 0.0179 | 0.0180 | 0.0806 |
+| C | 0.0625 | 0.2567 | 0.2430 | 0.2459 | 0.1683 |
+| D | 0.1147 | 0.3050 | 0.0724 | 0.0724 | 0.2621 |
+| E | 0.1843 | 0.0767 | 0.0013 | 0.0013 | 0.0606 |
+| E2 | 0.1726 | 0.0611 | 0.0008 | 0.0008 | 0.0418 |
+| LSTM | 0.0503 | 0.3625 | 0.3042 | 0.3063 | 0.2684 |
+| EWMA | 0.2288 | 0.4275 | 0.0045 | 0.0045 | 0.3652 |
+| River_HST | 0.1688 | 0.2814 | 0.0173 | 0.0157 | 0.2446 |
+| Lag_IForest | 0.0447 | 0.1601 | 0.2459 | 0.2476 | 0.0815 |
+
+#### Yahoo S5: Literature-Aligned Metrics
+
+| Pipeline | PA-F1 micro | PA-F1 macro+ | PR-AUC / AP+ | ROC-AUC+ | Oracle F1+ | Oracle PA-F1+ |
+|---|---:|---:|---:|---:|---:|---:|
+| A | 0.1298 | 0.1147 | 0.2072 | 0.5444 | 0.2640 | 0.2830 |
+| B | 0.2147 | 0.1050 | 0.1269 | 0.5161 | 0.1678 | 0.1988 |
+| C | 0.0658 | 0.1707 | 0.4302 | 0.8483 | 0.4965 | 0.5145 |
+| D | 0.1185 | 0.2648 | 0.5888 | 0.8858 | 0.6437 | 0.6581 |
+| E | 0.3418 | 0.0803 | 0.1583 | 0.5236 | 0.2007 | 0.2216 |
+| E2 | 0.3452 | 0.0643 | 0.1137 | 0.5226 | 0.1656 | 0.1953 |
+| LSTM | 0.0556 | 0.2827 | 0.5796 | 0.8480 | 0.6288 | 0.6542 |
+| EWMA | 0.5044 | 0.4388 | 0.5783 | 0.9069 | 0.6380 | 0.7150 |
+| River_HST | 0.2086 | 0.2584 | 0.4052 | 0.7922 | 0.4753 | 0.4886 |
+| Lag_IForest | 0.0519 | 0.0960 | 0.0886 | 0.5556 | 0.1202 | 0.1546 |
+
+Strict metrics favor different pipelines across measures: Lag_IForest has the highest NAB Event F1, while D leads NAB Point F1; EWMA leads Yahoo strict Point F1, Event F1, and Macro F1+. Point adjustment and oracle scores are intentionally separate because they can substantially exceed strict thresholded performance. The oracle values use test labels to select thresholds and should be treated only as upper-bound diagnostics.
+
+The source artifacts are [NAB pooled metrics](<outputs/report comparison/nab/NAB_pooled_metrics.json>), [Yahoo pooled metrics](<outputs/report comparison/yahoo/Yahoo_pooled_metrics.json>), and the per-series [NAB report](<outputs/report comparison/nab/report_benchmark_summary.json>) / [Yahoo report](<outputs/report comparison/yahoo/report_benchmark_summary.json>).
 
 ### Metrics
 
