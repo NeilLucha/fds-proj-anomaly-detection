@@ -41,6 +41,9 @@ dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
 ]
+report = [
+    "river>=0.21",
+]
 
 [project.scripts]
 drift-anomaly = "drift_anomaly.cli:main"

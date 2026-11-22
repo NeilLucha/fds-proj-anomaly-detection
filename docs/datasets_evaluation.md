@@ -45,6 +45,12 @@ For benchmark summaries, `pointwise_fpr_fp_over_fp_plus_tn` is pooled pointwise 
 
 The optional literature-aligned section reports point-adjusted (PA) precision/recall/F1 at the same validation-selected threshold, micro and positive-series macro PA-F1, per-positive-series Average Precision and ROC-AUC, and per-series oracle best unadjusted F1 and PA-F1. Point adjustment fills a complete contiguous true anomaly window after any one point in the window is detected. Strict metrics do not do this. Oracle scores use test labels to sweep thresholds and are reported only as retrospective upper bounds. PA is included for comparability, with the known overestimation caveat from Kim et al., AAAI 2022 ([paper](https://ojs.aaai.org/index.php/AAAI/article/view/20680)).
 
+## Standalone report comparison
+
+`scripts/run_report_benchmarks.py` compares the established A-D, E, E2, and LSTM variants against EWMA residual, River Half-Space Trees, and causal lag-window Isolation Forest on NAB or Yahoo S5. All series use chronological train/validation/test splits. Added-baseline thresholds maximize `0.5 * validation Point F1 + 0.5 * validation Event F1` subject to a 0.10 false-positive rate over validation negative points; the report marks a lowest-FPR fallback if no threshold meets the cap. EWMA and HST score before updating their online state; HST scaling is derived from training values and clipped to fixed limits. Lag_IForest uses only training lag windows to fit and past values to construct every validation/test feature. It does not refit on validation or test.
+
+Install River with `python -m pip install river` (or `python -m pip install -e ".[report]"`); the script fails clearly if it is missing. Outputs default to `outputs/report comparison/<dataset>/` and include `report_benchmark_summary.json`, standalone `pooled_metrics.json`, and `complexity_timing.json` with strict metrics, literature-aligned metrics, runtime, and complexity. Use `--max-series 1` for a smoke check; omit it for the complete benchmark.
+
 ### Point-Level Anomaly Detection
 - **Precision**: $\frac{\text{TP}}{\text{TP} + \text{FP}}$
 - **Recall**: $\frac{\text{TP}}{\text{TP} + \text{FN}}$

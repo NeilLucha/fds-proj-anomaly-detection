@@ -1,0 +1,78 @@
+{
+  "runtime": {
+    "A": {
+      "training_time_s": 0.0,
+      "inference_time_s": 8.540570799997113
+    },
+    "B": {
+      "training_time_s": 0.0,
+      "inference_time_s": 12.025866199996017
+    },
+    "C": {
+      "training_time_s": 0.0,
+      "inference_time_s": 1.483015400001932
+    },
+    "D": {
+      "training_time_s": 0.0,
+      "inference_time_s": 3.6192521000011766
+    },
+    "E": {
+      "training_time_s": 0.0,
+      "inference_time_s": 42.969352800002525
+    },
+    "E2": {
+      "training_time_s": 0.0,
+      "inference_time_s": 36.32276980000097
+    },
+    "LSTM": {
+      "training_time_s": 17.249334400001317,
+      "inference_time_s": 0.4237903000002916
+    },
+    "EWMA": {
+      "training_time_s": 0.15549789999931818,
+      "inference_time_s": 0.10289830000147049
+    },
+    "River_HST": {
+      "training_time_s": 10.356867200000124,
+      "inference_time_s": 6.965223300002435
+    },
+    "Lag_IForest": {
+      "training_time_s": 4.110665699999117,
+      "inference_time_s": 108.35096069999781
+    }
+  },
+  "complexity": {
+    "EWMA": {
+      "training": "O(N_train)",
+      "inference": "O(1) per point",
+      "memory": "O(1)",
+      "settings": {
+        "alpha": 0.05
+      }
+    },
+    "River_HST": {
+      "training": "O(N_train * n_trees * height)",
+      "inference": "O(n_trees * height) per point",
+      "memory": "O(n_trees * 2^height)",
+      "settings": {
+        "n_trees": 25,
+        "height": 8,
+        "window_size": 250
+      }
+    },
+    "Lag_IForest": {
+      "training": "O(T * n_estimators * subsample * log(subsample))",
+      "inference": "O(n_estimators * log(subsample)) per point",
+      "memory": "O(n_estimators * subsample + lookback)",
+      "settings": {
+        "lookback": 10,
+        "n_estimators": 100
+      }
+    },
+    "statistical_variants": "detector-specific online cost; no learned fitting phase",
+    "LSTM": {
+      "training": "O(E*N*L*H^2)",
+      "inference": "O(L*H^2) per point"
+    }
+  }
+}

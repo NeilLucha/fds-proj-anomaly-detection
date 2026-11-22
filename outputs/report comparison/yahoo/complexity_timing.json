@@ -1,0 +1,78 @@
+{
+  "runtime": {
+    "A": {
+      "training_time_s": 0.0,
+      "inference_time_s": 20.37206349999451
+    },
+    "B": {
+      "training_time_s": 0.0,
+      "inference_time_s": 24.586430099997415
+    },
+    "C": {
+      "training_time_s": 0.0,
+      "inference_time_s": 1.7192683999892324
+    },
+    "D": {
+      "training_time_s": 0.0,
+      "inference_time_s": 7.987717599985444
+    },
+    "E": {
+      "training_time_s": 0.0,
+      "inference_time_s": 77.96849999999631
+    },
+    "E2": {
+      "training_time_s": 0.0,
+      "inference_time_s": 77.73748329999944
+    },
+    "LSTM": {
+      "training_time_s": 38.11197649999394,
+      "inference_time_s": 1.22224670000287
+    },
+    "EWMA": {
+      "training_time_s": 0.3723580000059883,
+      "inference_time_s": 0.24489500000709086
+    },
+    "River_HST": {
+      "training_time_s": 27.078401400002804,
+      "inference_time_s": 14.07217330000276
+    },
+    "Lag_IForest": {
+      "training_time_s": 34.15448870000273,
+      "inference_time_s": 220.6106526999847
+    }
+  },
+  "complexity": {
+    "EWMA": {
+      "training": "O(N_train)",
+      "inference": "O(1) per point",
+      "memory": "O(1)",
+      "settings": {
+        "alpha": 0.05
+      }
+    },
+    "River_HST": {
+      "training": "O(N_train * n_trees * height)",
+      "inference": "O(n_trees * height) per point",
+      "memory": "O(n_trees * 2^height)",
+      "settings": {
+        "n_trees": 25,
+        "height": 8,
+        "window_size": 250
+      }
+    },
+    "Lag_IForest": {
+      "training": "O(T * n_estimators * subsample * log(subsample))",
+      "inference": "O(n_estimators * log(subsample)) per point",
+      "memory": "O(n_estimators * subsample + lookback)",
+      "settings": {
+        "lookback": 10,
+        "n_estimators": 100
+      }
+    },
+    "statistical_variants": "detector-specific online cost; no learned fitting phase",
+    "LSTM": {
+      "training": "O(E*N*L*H^2)",
+      "inference": "O(L*H^2) per point"
+    }
+  }
+}

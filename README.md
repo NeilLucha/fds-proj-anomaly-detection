@@ -365,6 +365,8 @@ Threshold `τ` is selected by maximising F1 on the **validation split only**. Th
 
 Older output folders contain runs with different variants, data subsets, and protocols, so they are not a consistent comparison set. Run the ordered workflow in [RUN_ALL_EVALUATIONS.md](RUN_ALL_EVALUATIONS.md) to tune/train and evaluate A-D, E, E2, and LSTM on synthetic, NAB, and Yahoo S5 using the same series-holdout protocol. The resulting comparable reports are written to `outputs/final_comparison/<dataset>/`.
 
+For the report comparison, run `python scripts/run_report_benchmarks.py --dataset nab` or `--dataset yahoo`. This standalone script retains A-D, E, E2, and LSTM, and adds EWMA, River Half-Space Trees (`River_HST`), and causal lag-window Isolation Forest (`Lag_IForest`). Added baselines tune with `0.5 * validation Point F1 + 0.5 * validation Event F1`, subject to a 0.10 validation negative-point FPR cap and an explicitly reported lowest-FPR fallback. It writes formatted strict/literature-aligned tables plus `report_benchmark_summary.json`, `pooled_metrics.json`, and `complexity_timing.json` under `outputs/report comparison/<dataset>/`. Install River with `python -m pip install river` (or `python -m pip install -e ".[report]"`). HST scores each point before learning it; Lag_IForest fits only on training lag windows.
+
 Yahoo S5 is available locally under `data/raw/yahoo_s5/`; `drift-anomaly check-yahoo --data-root data/raw/yahoo_s5` verifies the A1-A4 directories before evaluation.
 
 ### Metrics

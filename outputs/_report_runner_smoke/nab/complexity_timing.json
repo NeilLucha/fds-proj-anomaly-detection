@@ -1,0 +1,78 @@
+{
+  "runtime": {
+    "A": {
+      "training_time_s": 0.0,
+      "inference_time_s": 0.003978700000516255
+    },
+    "B": {
+      "training_time_s": 0.0,
+      "inference_time_s": 0.003876799999488867
+    },
+    "C": {
+      "training_time_s": 0.0,
+      "inference_time_s": 0.0014123000000836328
+    },
+    "D": {
+      "training_time_s": 0.0,
+      "inference_time_s": 0.0026579000004858244
+    },
+    "E": {
+      "training_time_s": 0.0,
+      "inference_time_s": 0.01905200000055629
+    },
+    "E2": {
+      "training_time_s": 0.0,
+      "inference_time_s": 0.02133640000010928
+    },
+    "LSTM": {
+      "training_time_s": 2.8783708000000843,
+      "inference_time_s": 0.0007811000004949165
+    },
+    "EWMA": {
+      "training_time_s": 7.999999979801942e-05,
+      "inference_time_s": 4.799999987881165e-05
+    },
+    "River_HST": {
+      "training_time_s": 0.09082080000007409,
+      "inference_time_s": 0.0014572000000043772
+    },
+    "Lag_IForest": {
+      "training_time_s": 0.14427819999946223,
+      "inference_time_s": 0.046925600000577106
+    }
+  },
+  "complexity": {
+    "EWMA": {
+      "training": "O(N_train)",
+      "inference": "O(1) per point",
+      "memory": "O(1)",
+      "settings": {
+        "alpha": 0.05
+      }
+    },
+    "River_HST": {
+      "training": "O(N_train * n_trees * height)",
+      "inference": "O(n_trees * height) per point",
+      "memory": "O(n_trees * 2^height)",
+      "settings": {
+        "n_trees": 25,
+        "height": 8,
+        "window_size": 250
+      }
+    },
+    "Lag_IForest": {
+      "training": "O(T * n_estimators * subsample * log(subsample))",
+      "inference": "O(n_estimators * log(subsample)) per point",
+      "memory": "O(n_estimators * subsample + lookback)",
+      "settings": {
+        "lookback": 10,
+        "n_estimators": 100
+      }
+    },
+    "statistical_variants": "detector-specific online cost; no learned fitting phase",
+    "LSTM": {
+      "training": "O(E*N*L*H^2)",
+      "inference": "O(L*H^2) per point"
+    }
+  }
+}
